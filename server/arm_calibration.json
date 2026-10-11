@@ -1,0 +1,103 @@
+{
+  "manipulator": "3D-Printed RoboWings 6-DOF Robotic Arm",
+  "link_dimensions_mm": {
+    "base_pedestal": 65.0,
+    "shoulder_upper_arm": 125.0,
+    "elbow_forearm": 125.0,
+    "wrist_pivot": 60.0,
+    "gripper_finger": 45.0,
+    "total_tool_length": 105.0
+  },
+  "joints": [
+    {
+      "channel": 0,
+      "joint_name": "Base Yaw (Waist)",
+      "type": "Positional Servo (180°)",
+      "direction": 1,
+      "offset_deg": 90.0,
+      "min_limit_deg": 0.0,
+      "max_limit_deg": 180.0,
+      "neutral_pulse_us": 1500,
+      "calibrated": true,
+      "notes": "90° = Centered forward. 45° = Station A (Pick), 135° = Station B (Drop)."
+    },
+    {
+      "channel": 1,
+      "joint_name": "Shoulder Pitch",
+      "type": "Positional Servo (180°)",
+      "direction": 1,
+      "offset_deg": 90.0,
+      "min_limit_deg": 20.0,
+      "max_limit_deg": 160.0,
+      "neutral_pulse_us": 1500,
+      "calibrated": true,
+      "notes": "90° = Upright vertical link. <90° pitches forward towards workpiece."
+    },
+    {
+      "channel": 2,
+      "joint_name": "Elbow Pitch",
+      "type": "Continuous 360° or Pot Positional (Requires Verification)",
+      "direction": 1,
+      "offset_deg": 90.0,
+      "min_limit_deg": 25.0,
+      "max_limit_deg": 155.0,
+      "neutral_pulse_us": 1500,
+      "calibrated": false,
+      "notes": "90° = Right angle bend. 120° = Folded close (Home). If continuous, timed pulses applied. Positional replacement strongly recommended."
+    },
+    {
+      "channel": 3,
+      "joint_name": "Wrist Pitch",
+      "type": "Positional Servo (180°)",
+      "direction": 1,
+      "offset_deg": 90.0,
+      "min_limit_deg": 20.0,
+      "max_limit_deg": 160.0,
+      "neutral_pulse_us": 1500,
+      "calibrated": true,
+      "notes": "90° = In-line with forearm. 115° = Gripper oriented perpendicular to table."
+    },
+    {
+      "channel": 4,
+      "joint_name": "Wrist Roll",
+      "type": "Continuous 360° or Positional (Requires Verification)",
+      "direction": 1,
+      "offset_deg": 90.0,
+      "min_limit_deg": 0.0,
+      "max_limit_deg": 180.0,
+      "neutral_pulse_us": 1500,
+      "calibrated": false,
+      "notes": "90° = Neutral vertical claw orientation. Manual JOG CW/CCW supported."
+    },
+    {
+      "channel": 5,
+      "joint_name": "Gripper Claw",
+      "type": "Positional Servo (180°)",
+      "direction": 1,
+      "offset_deg": 20.0,
+      "min_limit_deg": 15.0,
+      "max_limit_deg": 85.0,
+      "neutral_pulse_us": 1500,
+      "calibrated": true,
+      "notes": "20° = Fully open (release). 80° = Firm clamp on payload puck."
+    }
+  ],
+  "calibrated_poses": {
+    "HOME": {
+      "description": "Compact upright resting pose, minimal gravity load, table clearance",
+      "angles": [90.0, 90.0, 120.0, 90.0, 90.0, 20.0]
+    },
+    "PICK": {
+      "description": "Reaching down to pick payload puck at Station A (45°), perpendicular jaw approach",
+      "angles": [45.0, 55.0, 60.0, 115.0, 90.0, 20.0]
+    },
+    "LIFT": {
+      "description": "Vertical clearance lift, payload clamped (80°), steady orientation",
+      "angles": [45.0, 85.0, 95.0, 90.0, 90.0, 80.0]
+    },
+    "DROP": {
+      "description": "Descent into drop bin at Station B (135°), claw holds until arrival then opens",
+      "angles": [135.0, 60.0, 65.0, 110.0, 90.0, 80.0]
+    }
+  }
+}

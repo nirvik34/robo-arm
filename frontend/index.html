@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>6-DOF Robotic Arm // Real Physics & Precision Motor Controller</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=6.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Header Bar -->
+  <header class="header">
+    <div class="brand">
+      <span class="brand-icon">🦾</span>
+      <div>
+        <h1 class="brand-title">6-DOF ROBOTIC ARM CONTROLLER</h1>
+        <p class="brand-subtitle">REAL MULTI-LINK PHYSICS // ARDUINO PCA9685 CH 0–5 // LIVE ANGLE TELEMETRY</p>
+      </div>
+    </div>
+
+    <!-- Center Port & Device Selectors -->
+    <div class="header-center">
+      <div class="port-bar">
+        <span class="icon-label">🔌</span>
+        <select id="portSelect" class="select-port" title="Select Serial Port">
+          <option value="/dev/ttyUSB0">/dev/ttyUSB0 (Detecting...)</option>
+        </select>
+        <button id="refreshPortsBtn" class="btn btn-icon" title="Refresh ports">🔄</button>
+        <button id="connectPortBtn" class="btn btn-sm btn-primary">Connect</button>
+        <button id="disconnectPortBtn" class="btn btn-sm btn-secondary">Disconnect</button>
+      </div>
+
+      <!-- Ultrasonic Sonar Telemetry Badge -->
+      <div id="sonarBadge" class="sonar-badge" title="Live HC-SR04 distance on Trig: D8, Echo: D9">
+        <span class="sonar-dot"></span>
+        <span id="sonarDistanceText">Sonar: -- cm</span>
+      </div>
+
+      <!-- Physics Mode Badge -->
+      <div id="physicsBadge" class="physics-badge" title="Real Multi-Link Gravitational Dynamics Active">
+        <span class="physics-dot"></span>
+        <span>REAL PHYSICS: ACTIVE</span>
+      </div>
+
+      <button id="simModeBtn" class="btn btn-sm btn-outline">Virtual Sim</button>
+      <button id="openFlashModalBtn" class="btn btn-sm btn-cyan">⚡ Flash Firmware</button>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="header-actions">
+      <div id="statusBadge" class="status-badge badge-connecting">
+        <span class="dot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+
+      <button id="relaxAllBtn" class="btn btn-danger">🛑 RELAX ALL (OFF)</button>
+      <button id="attachAllBtn" class="btn btn-success">⚡ ENGAGE ALL</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="dashboard-container">
+
+    <!-- Live PCA9685 Hardware Status Banner -->
+    <div id="hardwareAlertBanner" class="hardware-banner banner-warning" style="display: none;">
+      <div class="banner-icon">⚠️</div>
+      <div class="banner-content">
+        <div class="banner-title" id="bannerTitle">PCA9685 Motor Driver Not Acknowledged on I2C (Address 0x40)</div>
+        <div class="banner-text" id="bannerText">
+          Motors cannot move without PCA9685 power. <strong>Hardware Checklist:</strong>
+          1) Connect PCA9685 <strong>VCC</strong> to Arduino <strong>5V</strong> and <strong>GND</strong> to <strong>GND</strong>.
+          2) Connect <strong>SDA</strong> to Arduino <strong>A4</strong> and <strong>SCL</strong> to <strong>A5</strong>.
+          3) Connect external <strong>5V–6V battery / DC power</strong> to the green <strong>V+ screw terminal</strong> and switch it ON. Servos cannot move on USB power alone!
+        </div>
+      </div>
+      <button id="scanI2cBtn" class="btn btn-xs btn-outline" style="border-color: var(--amber); color: #fbbf24; white-space: nowrap;">
+        🔍 Scan I2C Bus
+      </button>
+    </div>
+    
+    <!-- Top Action Toolbar: Hardcoded Motion Presets -->
+    <section class="toolbar">
+      <div class="toolbar-section">
+        <span class="toolbar-label">🤖 Hardcoded Motions:</span>
+        <div class="action-buttons-wrap">
+          <button id="hardcodedPickDropBtn" class="btn btn-sm btn-cyan" title="Full 8-step hardcoded autonomous pick, lift, transfer and deposit sequence">
+            ▶ Run Hardcoded Pick & Drop
+          </button>
+          <button id="hardcodedReverseBtn" class="btn btn-sm btn-secondary" title="Hardcoded reverse sequence: Transfer from Drop Bin back to Pick Station">
+            ◀ Run Hardcoded Reverse (Drop to Pick)
+          </button>
+          <button id="haltRoutineBtn" class="btn btn-sm btn-danger" title="Instantly halt current routine">
+            ⏹ Halt Routine
+          </button>
+          <button id="poseStandbyBtn" class="btn btn-sm btn-outline" title="Return arm to safe upright home pose (all 90°, claw 20°)">
+            🏠 Home / Standby
+          </button>
+          <button id="posePickBtn" class="btn btn-sm btn-outline" title="Reach arm down to grasp object at pick station">
+            📦 Pick Pose
+          </button>
+          <button id="poseLiftBtn" class="btn btn-sm btn-outline" title="Lift arm upright counteracting gravity with payload">
+            🏗️ Lift Pose
+          </button>
+          <button id="poseDropBtn" class="btn btn-sm btn-outline" title="Swing to drop zone and lower">
+            📥 Drop Pose
+          </button>
+          <button id="toggleClawBtn" class="btn btn-sm btn-outline" title="Toggle claw open (20°) or grip (80°)">
+            🖐 Toggle Claw
+          </button>
+        </div>
+      </div>
+
+      <div class="toolbar-section toolbar-options">
+        <div class="speed-control-box">
+          <span class="toolbar-label">Speed:</span>
+          <input type="range" id="masterSpeedSlider" min="15" max="180" value="70" step="5" class="speed-slider">
+          <span id="masterSpeedValue" class="mono-badge">70°/s</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- UPPER HERO SECTION: 3D DIGITAL TWIN & REAL PHYSICS SUITE -->
+    <section class="physics-twin-grid">
+      
+      <!-- Left: 3D WebGL Interactive Arm Digital Twin -->
+      <div class="hub-card viewport-card">
+        <div class="hub-header">
+          <div class="hub-title-box">
+            <span style="font-size: 20px;">🌐</span>
+            <div>
+              <h3>3D Digital Twin & Live Kinematics</h3>
+              <p style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+                Three.js WebGL // Real-Time Joint Sync // Left-Click: Orbit, Right-Click: Pan, Scroll: Zoom
+              </p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button id="resetCamBtn" class="btn btn-xs btn-outline">🎥 Reset Camera</button>
+            <button id="toggleAxesBtn" class="btn btn-xs btn-outline">📏 Toggle Grid</button>
+          </div>
+        </div>
+
+        <!-- 3D Canvas Viewport -->
+        <div class="viewport-3d-wrap" id="viewport3dContainer">
+          <canvas id="canvas3d" class="canvas-3d"></canvas>
+          
+          <!-- Live End-Effector Forward Kinematics HUD Overlay -->
+          <div class="fk-hud" id="fkHud">
+            <div class="fk-title">🎯 TOOL CENTER POINT (TCP)</div>
+            <div class="fk-coords">
+              <span class="fk-axis">X: <strong id="fkX">0.00</strong> mm</span>
+              <span class="fk-axis">Y: <strong id="fkY">0.00</strong> mm</span>
+              <span class="fk-axis">Z: <strong id="fkZ">420.00</strong> mm</span>
+            </div>
+            <div class="fk-meta">
+              <span>Radial Reach: <strong id="fkReach">0.00</strong> mm</span>
+              <span>Total Dist: <strong id="fkDist">420.00</strong> mm</span>
+            </div>
+          </div>
+
+          <!-- Gravity Vector Indicator in 3D -->
+          <div class="gravity-hud-indicator">
+            <span class="gravity-arrow">⬇</span>
+            <span>g = 9.81 m/s²</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Real Physics & Gravity Compensation Panel -->
+      <div class="hub-card physics-card">
+        <div class="hub-header">
+          <div class="hub-title-box">
+            <span style="font-size: 20px;">⚖️</span>
+            <div>
+              <h3>Real Physics & Gravity Compensation</h3>
+              <p style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+                Newton-Euler Dynamics // Feedforward Droop Correction // Torque Modeling
+              </p>
+            </div>
+          </div>
+          <div class="toggle-pill-wrap">
+            <label class="switch-label">
+              <input type="checkbox" id="gravityCompToggle" checked>
+              <span class="slider-toggle"></span>
+            </label>
+            <span id="gravityCompStatusText" style="font-size: 11px; font-weight: 700; color: var(--emerald);">COMPENSATION ON</span>
+          </div>
+        </div>
+
+        <div class="physics-body">
+          <!-- Payload Mass Tuning Slider -->
+          <div class="physics-control-box">
+            <div class="control-header-row">
+              <span class="control-label">📦 Payload Mass in Claw:</span>
+              <span id="payloadMassDisplay" class="mono-badge">40.0 g (0.040 kg)</span>
+            </div>
+            <input type="range" id="payloadMassSlider" min="0" max="250" value="40" step="5" class="custom-range">
+            <div class="scale-labels">
+              <span>0g (Empty)</span>
+              <span>50g</span>
+              <span>100g</span>
+              <span>150g</span>
+              <span>200g</span>
+              <span>250g (Max Load)</span>
+            </div>
+          </div>
+
+          <!-- Gravitational Torque Distribution Gauges -->
+          <div class="torque-meters-box">
+            <div class="torque-header">
+              <span>JOINT GRAVITATIONAL TORQUE LOAD (N·m):</span>
+              <span style="font-size: 10px; color: var(--text-muted);">Against Servo Stall Torque</span>
+            </div>
+
+            <!-- Shoulder Torque Meter -->
+            <div class="torque-item">
+              <div class="torque-item-header">
+                <span>CH 1 Shoulder Pitch:</span>
+                <span id="torqueShoulderVal" class="torque-val">0.00 N·m (0%)</span>
+              </div>
+              <div class="torque-progress-bar">
+                <div id="torqueBarShoulder" class="torque-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Elbow Torque Meter -->
+            <div class="torque-item">
+              <div class="torque-item-header">
+                <span>CH 2 Elbow Pitch:</span>
+                <span id="torqueElbowVal" class="torque-val">0.00 N·m (0%)</span>
+              </div>
+              <div class="torque-progress-bar">
+                <div id="torqueBarElbow" class="torque-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Wrist Torque Meter -->
+            <div class="torque-item">
+              <div class="torque-item-header">
+                <span>CH 3 Wrist Pitch:</span>
+                <span id="torqueWristVal" class="torque-val">0.00 N·m (0%)</span>
+              </div>
+              <div class="torque-progress-bar">
+                <div id="torqueBarWrist" class="torque-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-Time Droop Deflection & Feedforward Compensation Readout -->
+          <div class="droop-analysis-box">
+            <div class="droop-title">📐 ACTIVE GRAVITY DEFLECTION & FEEDFORWARD OFFSETS:</div>
+            <div class="droop-grid">
+              <div class="droop-card">
+                <span class="droop-card-lbl">Shoulder Sag / Droop:</span>
+                <span id="droopShoulderText" class="droop-card-val">0.00°</span>
+                <span class="droop-offset-lbl">Offset: <strong id="offsetShoulderText">+0.00°</strong></span>
+              </div>
+              <div class="droop-card">
+                <span class="droop-card-lbl">Elbow Sag / Droop:</span>
+                <span id="droopElbowText" class="droop-card-val">0.00°</span>
+                <span class="droop-offset-lbl">Offset: <strong id="offsetElbowText">+0.00°</strong></span>
+              </div>
+              <div class="droop-card">
+                <span class="droop-card-lbl">Wrist Sag / Droop:</span>
+                <span id="droopWristText" class="droop-card-val">0.00°</span>
+                <span class="droop-offset-lbl">Offset: <strong id="offsetWristText">+0.00°</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ultrasonic Radar Badge inside Physics Panel -->
+          <div class="sonar-inline-panel">
+            <div class="sonar-inline-left">
+              <span style="font-size: 16px;">📡</span>
+              <div>
+                <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">HC-SR04 ULTRASONIC SENSOR (D8/D9)</div>
+                <div style="font-size: 16px; font-weight: 800; font-family: var(--font-mono); color: #fff;">
+                  Distance: <span id="radarDistanceValue" style="color: var(--cyan);">--</span> cm
+                </div>
+              </div>
+            </div>
+            <div id="radarTargetStatus" class="inv-badge badge-ready">
+              CHECKING PAYLOAD...
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- 3D CARTESIAN WORKSPACE TARGET CONTROLLER & JOINT-SPACE MOTION PLANNER (RxInfer Engine) -->
+    <section class="hub-card cartesian-card" id="cartesianPlannerCard">
+      <div class="hub-header">
+        <div class="hub-title-box">
+          <span style="font-size: 22px;">🎯</span>
+          <div>
+            <h3>3D Cartesian Workspace Controller & Joint-Space Motion Planner</h3>
+            <p style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+              Inverse Kinematics (DLS) // Joint-Space Dynamics & Quintic Minimum-Jerk Trajectory // RxInfer.jl Architecture
+            </p>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span id="ikStatusBadge" class="inv-badge badge-ready">READY // REACHABLE</span>
+          <button id="clearTrailBtn" class="btn btn-xs btn-outline">✨ Clear 3D Motion Trail</button>
+        </div>
+      </div>
+
+      <div class="cartesian-grid">
+        <!-- Col 1: Target XYZ Inputs & Quick Presets -->
+        <div class="cartesian-col">
+          <div class="cartesian-col-header">
+            <span>📍 CARTESIAN TARGET (X, Y, Z in mm):</span>
+            <span style="font-size: 10.5px; color: var(--text-muted);">Coordinate Frame TCP</span>
+          </div>
+
+          <div class="coord-inputs-wrap">
+            <div class="coord-input-item">
+              <label class="coord-label axis-x">Target X:</label>
+              <div class="coord-stepper">
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('x', -10)">-10</button>
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('x', -2)">-2</button>
+                <input type="number" id="targetCoordX" value="0.00" step="1" class="coord-num-input">
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('x', 2)">+2</button>
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('x', 10)">+10</button>
+              </div>
+            </div>
+
+            <div class="coord-input-item">
+              <label class="coord-label axis-y">Target Y:</label>
+              <div class="coord-stepper">
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('y', -10)">-10</button>
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('y', -2)">-2</button>
+                <input type="number" id="targetCoordY" value="0.00" step="1" class="coord-num-input">
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('y', 2)">+2</button>
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('y', 10)">+10</button>
+              </div>
+            </div>
+
+            <div class="coord-input-item">
+              <label class="coord-label axis-z">Target Z:</label>
+              <div class="coord-stepper">
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('z', -10)">-10</button>
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('z', -2)">-2</button>
+                <input type="number" id="targetCoordZ" value="420.00" step="1" class="coord-num-input">
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('z', 2)">+2</button>
+                <button class="step-btn" onclick="window.app.adjustTargetCoord('z', 10)">+10</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Target Presets -->
+          <div class="preset-label-row">QUICK TARGET PRESETS:</div>
+          <div class="target-presets-flex">
+            <button class="btn btn-xs btn-outline preset-target-btn" onclick="window.app.setTargetPreset(0, 0, 420)">
+              🏠 Home (0, 0, 420)
+            </button>
+            <button class="btn btn-xs btn-outline preset-target-btn" onclick="window.app.setTargetPreset(201.2, -201.2, 225.2)">
+              📦 Pick Pose
+            </button>
+            <button class="btn btn-xs btn-outline preset-target-btn" onclick="window.app.setTargetPreset(43.5, -43.5, 413.7)">
+              🏗️ High Lift
+            </button>
+            <button class="btn btn-xs btn-outline preset-target-btn" onclick="window.app.setTargetPreset(-162.7, 162.7, 225.2)">
+              📥 Drop Pose
+            </button>
+            <button class="btn btn-xs btn-outline preset-target-btn" onclick="window.app.setTargetPreset(280, 0, 225)">
+              🎯 Forward Reach
+            </button>
+            <button class="btn btn-xs btn-outline preset-target-btn" onclick="window.app.setTargetPreset(310, 0, 40)">
+              📐 Table Pick
+            </button>
+          </div>
+        </div>
+
+        <!-- Col 2: Solved Joint Angles & Reach Verification -->
+        <div class="cartesian-col">
+          <div class="cartesian-col-header">
+            <span>📐 INVERSE KINEMATICS SOLUTION:</span>
+            <span id="ikSolveTimeText" style="font-size: 10.5px; color: var(--cyan);">Instant (< 0.1ms)</span>
+          </div>
+
+          <div class="ik-angles-chips-grid">
+            <div class="ik-chip">
+              <span class="ik-chip-lbl">CH 0 Base</span>
+              <span id="ikSolCh0" class="ik-chip-val">90.00°</span>
+            </div>
+            <div class="ik-chip">
+              <span class="ik-chip-lbl">CH 1 Shoulder</span>
+              <span id="ikSolCh1" class="ik-chip-val">90.00°</span>
+            </div>
+            <div class="ik-chip">
+              <span class="ik-chip-lbl">CH 2 Elbow</span>
+              <span id="ikSolCh2" class="ik-chip-val">90.00°</span>
+            </div>
+            <div class="ik-chip">
+              <span class="ik-chip-lbl">CH 3 Wrist P</span>
+              <span id="ikSolCh3" class="ik-chip-val">90.00°</span>
+            </div>
+            <div class="ik-chip">
+              <span class="ik-chip-lbl">CH 4 Wrist R</span>
+              <span id="ikSolCh4" class="ik-chip-val">90.00°</span>
+            </div>
+            <div class="ik-chip">
+              <span class="ik-chip-lbl">CH 5 Claw</span>
+              <span id="ikSolCh5" class="ik-chip-val">20.00°</span>
+            </div>
+          </div>
+
+          <div class="ik-verify-box">
+            <div class="ik-verify-row">
+              <span>Achieved TCP Position:</span>
+              <strong id="ikAchievedCoordsText" class="mono-badge">X: 0.00, Y: 0.00, Z: 420.00 mm</strong>
+            </div>
+            <div class="ik-verify-row">
+              <span>Positional Accuracy / Error:</span>
+              <span id="ikPosErrorText" style="color: var(--emerald); font-weight: 700; font-family: var(--font-mono);">0.00 mm (Sub-millimeter Exact)</span>
+            </div>
+            <div class="ik-verify-row">
+              <span>Workspace Reach Status:</span>
+              <span id="ikReachStatusText" style="color: var(--cyan); font-weight: 700;">Within Physical Boundary</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Col 3: Joint-Space Trajectory Execution Controls -->
+        <div class="cartesian-col">
+          <div class="cartesian-col-header">
+            <span>🚀 JOINT-SPACE TRAJECTORY MOTION:</span>
+            <span style="font-size: 10.5px; color: var(--text-muted);">Quintic S-Curve // Minimum Jerk</span>
+          </div>
+
+          <div class="traj-duration-box">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font-size: 11px; color: var(--text-secondary);">Trajectory Duration:</span>
+              <span id="trajDurationValue" class="mono-badge">1.5 s</span>
+            </div>
+            <input type="range" id="trajDurationSlider" min="0.5" max="4.0" step="0.1" value="1.5" class="custom-range" style="width: 100%;">
+          </div>
+
+          <div class="traj-action-buttons">
+            <button id="moveToXyzBtn" class="btn btn-primary" style="width: 100%; justify-content: center; font-weight: 800; padding: 10px 14px;">
+              🚀 Move to Target XYZ (Joint-Space Quintic)
+            </button>
+            <button id="safeHomeBtn" class="btn btn-secondary" style="width: 100%; justify-content: center; font-weight: 700; padding: 9px 14px;">
+              🏠 Safe Return to Home (Lift-First Anti-Collision)
+            </button>
+          </div>
+
+          <div class="traj-progress-wrap" id="trajProgressWrap" style="display: none; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 10.5px; font-family: var(--font-mono); margin-bottom: 4px;">
+              <span id="trajPhaseLabel" style="color: var(--cyan);">Interpolating Quintic Minimum-Jerk S-Curve...</span>
+              <span id="trajProgressPct" style="color: #fff;">0%</span>
+            </div>
+            <div class="torque-progress-bar">
+              <div id="trajProgressBar" class="torque-fill" style="width: 0%; background: linear-gradient(90deg, var(--cyan), var(--blue-primary));"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 6 INDIVIDUAL MOTOR PRECISION TELEMETRY CARDS (CH 0 TO CH 5) -->
+    <section class="section-title-bar">
+      <h2>🎛️ Exact Live Motor Positions & Independent Channel Control (CH 0 – CH 5)</h2>
+      <p>High-Precision 50Hz Real-Time Angle Telemetry // Direct Pulse-Width Timing // Continuous Holding Torque</p>
+    </section>
+
+    <section class="motors-grid">
+
+      <!-- CH 0: Base / Waist Rotation -->
+      <div class="motor-card" id="motor-card-0">
+        <div class="motor-card-header">
+          <div class="ch-tag">
+            <span class="ch-badge">CH 0</span>
+            <span class="ch-name">Base / Waist (Yaw)</span>
+            <select class="range-select" onchange="window.app.setChannelRange(0, this.value)" title="Servo Rotation Span">
+              <option value="180">0-180°</option>
+              <option value="270">0-270°</option>
+              <option value="360">0-360°</option>
+            </select>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-outline" id="toggle-pwr-0">Power ON</button>
+            <span class="ch-status-pill pill-relaxed" id="pill-status-0">RELAXED</span>
+          </div>
+        </div>
+
+        <div class="motor-center-dial">
+          <div class="gauge-container">
+            <svg class="radial-gauge" viewBox="0 0 100 60">
+              <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+              <path class="gauge-arc" id="arc-0" d="M 10 50 A 40 40 0 0 1 90 50" />
+            </svg>
+            <div class="gauge-needle" id="needle-0"></div>
+          </div>
+          <div class="angle-readout-box">
+            <div class="angle-number-wrap">
+              <span class="angle-number" id="val-0">90.00</span>
+              <span class="angle-unit">°</span>
+            </div>
+            <div class="target-readout">Target: <span id="tgt-0">90.00</span>°</div>
+            <div class="pulse-readout" id="pulse-0">~1500 µs</div>
+          </div>
+        </div>
+
+        <div class="slider-container">
+          <input type="range" class="servo-range" id="slider-0" min="0" max="180" step="0.5" value="90">
+        </div>
+
+        <div class="step-btn-group">
+          <button class="step-btn" onclick="window.app.stepChannel(0, -10)">-10°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(0, -1)">-1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(0, -0.5)">-0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(0, 0.5)">+0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(0, 1)">+1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(0, 10)">+10°</button>
+        </div>
+
+        <div class="card-actions-row">
+          <div class="preset-pills">
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(0, 45)">Pick 45°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(0, 90)">Mid 90°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(0, 135)">Drop 135°</button>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-warning" onclick="window.app.holdChannel(0)" title="Lock position midway">🛑 Hold</button>
+            <button class="btn btn-xs btn-cyan" onclick="window.app.isolateChannel(0)" title="Power only this motor">⚡ Isolate</button>
+            <button class="btn btn-xs btn-primary" id="sweep-btn-0" onclick="window.app.testSweepChannel(0)" title="Smooth test arc">▶ Sweep</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CH 1: Shoulder Joint (Pitch) - ACTIVE & POWERED -->
+      <div class="motor-card" id="motor-card-1">
+        <div class="motor-card-header">
+          <div class="ch-tag">
+            <span class="ch-badge">CH 1</span>
+            <span class="ch-name">Shoulder Joint (Pitch)</span>
+            <select class="range-select" onchange="window.app.setChannelRange(1, this.value)" title="Servo Rotation Span">
+              <option value="180">0-180°</option>
+              <option value="270">0-270°</option>
+              <option value="360">0-360°</option>
+            </select>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-outline" id="toggle-pwr-1">Power ON</button>
+            <span class="ch-status-pill pill-relaxed" id="pill-status-1">RELAXED</span>
+          </div>
+        </div>
+
+        <div class="motor-center-dial">
+          <div class="gauge-container">
+            <svg class="radial-gauge" viewBox="0 0 100 60">
+              <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+              <path class="gauge-arc" id="arc-1" d="M 10 50 A 40 40 0 0 1 90 50" />
+            </svg>
+            <div class="gauge-needle" id="needle-1"></div>
+          </div>
+          <div class="angle-readout-box">
+            <div class="angle-number-wrap">
+              <span class="angle-number" id="val-1">90.00</span>
+              <span class="angle-unit">°</span>
+            </div>
+            <div class="target-readout">Target: <span id="tgt-1">90.00</span>°</div>
+            <div class="pulse-readout" id="pulse-1">~1500 µs</div>
+          </div>
+        </div>
+
+        <div class="slider-container">
+          <input type="range" class="servo-range" id="slider-1" min="0" max="180" step="0.5" value="90">
+        </div>
+
+        <div class="step-btn-group">
+          <button class="step-btn" onclick="window.app.stepChannel(1, -10)">-10°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(1, -1)">-1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(1, -0.5)">-0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(1, 0.5)">+0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(1, 1)">+1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(1, 10)">+10°</button>
+        </div>
+
+        <div class="card-actions-row">
+          <div class="preset-pills">
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(1, 55)">Reach 55°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(1, 90)">Upright 90°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(1, 85)">Lift 85°</button>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-warning" onclick="window.app.holdChannel(1)" title="Lock position midway">🛑 Hold</button>
+            <button class="btn btn-xs btn-cyan" onclick="window.app.isolateChannel(1)" title="Power only this motor">⚡ Isolate</button>
+            <button class="btn btn-xs btn-primary" id="sweep-btn-1" onclick="window.app.testSweepChannel(1)" title="Smooth test arc">▶ Sweep</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CH 2: Elbow Joint (Pitch) -->
+      <div class="motor-card" id="motor-card-2">
+        <div class="motor-card-header">
+          <div class="ch-tag">
+            <span class="ch-badge">CH 2</span>
+            <span class="ch-name">Elbow Joint (Pitch)</span>
+            <select class="range-select" onchange="window.app.setChannelRange(2, this.value)" title="Servo Rotation Span">
+              <option value="180">0-180°</option>
+              <option value="270">0-270°</option>
+              <option value="360">0-360°</option>
+            </select>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-outline" id="toggle-pwr-2">Power ON</button>
+            <span class="ch-status-pill pill-relaxed" id="pill-status-2">RELAXED</span>
+          </div>
+        </div>
+
+        <div class="motor-center-dial">
+          <div class="gauge-container">
+            <svg class="radial-gauge" viewBox="0 0 100 60">
+              <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+              <path class="gauge-arc" id="arc-2" d="M 10 50 A 40 40 0 0 1 90 50" />
+            </svg>
+            <div class="gauge-needle" id="needle-2"></div>
+          </div>
+          <div class="angle-readout-box">
+            <div class="angle-number-wrap">
+              <span class="angle-number" id="val-2">90.00</span>
+              <span class="angle-unit">°</span>
+            </div>
+            <div class="target-readout">Target: <span id="tgt-2">90.00</span>°</div>
+            <div class="pulse-readout" id="pulse-2">~1500 µs</div>
+          </div>
+        </div>
+
+        <div class="slider-container">
+          <input type="range" class="servo-range" id="slider-2" min="0" max="180" step="0.5" value="90">
+        </div>
+
+        <div class="step-btn-group">
+          <button class="step-btn" onclick="window.app.stepChannel(2, -10)">-10°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(2, -1)">-1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(2, -0.5)">-0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(2, 0.5)">+0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(2, 1)">+1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(2, 10)">+10°</button>
+        </div>
+
+        <div class="card-actions-row">
+          <div class="preset-pills">
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(2, 60)">Reach 60°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(2, 90)">Mid 90°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(2, 120)">Fold 120°</button>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-warning" onclick="window.app.holdChannel(2)" title="Lock position midway">🛑 Hold</button>
+            <button class="btn btn-xs btn-cyan" onclick="window.app.isolateChannel(2)" title="Power only this motor">⚡ Isolate</button>
+            <button class="btn btn-xs btn-primary" id="sweep-btn-2" onclick="window.app.testSweepChannel(2)" title="Smooth test arc">▶ Sweep</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CH 3: Wrist Pitch -->
+      <div class="motor-card" id="motor-card-3">
+        <div class="motor-card-header">
+          <div class="ch-tag">
+            <span class="ch-badge">CH 3</span>
+            <span class="ch-name">Wrist Pitch</span>
+            <select class="range-select" onchange="window.app.setChannelRange(3, this.value)" title="Servo Rotation Span">
+              <option value="180">0-180°</option>
+              <option value="270">0-270°</option>
+              <option value="360">0-360°</option>
+            </select>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-outline" id="toggle-pwr-3">Power ON</button>
+            <span class="ch-status-pill pill-relaxed" id="pill-status-3">RELAXED</span>
+          </div>
+        </div>
+
+        <div class="motor-center-dial">
+          <div class="gauge-container">
+            <svg class="radial-gauge" viewBox="0 0 100 60">
+              <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+              <path class="gauge-arc" id="arc-3" d="M 10 50 A 40 40 0 0 1 90 50" />
+            </svg>
+            <div class="gauge-needle" id="needle-3"></div>
+          </div>
+          <div class="angle-readout-box">
+            <div class="angle-number-wrap">
+              <span class="angle-number" id="val-3">90.00</span>
+              <span class="angle-unit">°</span>
+            </div>
+            <div class="target-readout">Target: <span id="tgt-3">90.00</span>°</div>
+            <div class="pulse-readout" id="pulse-3">~1500 µs</div>
+          </div>
+        </div>
+
+        <div class="slider-container">
+          <input type="range" class="servo-range" id="slider-3" min="0" max="180" step="0.5" value="90">
+        </div>
+
+        <div class="step-btn-group">
+          <button class="step-btn" onclick="window.app.stepChannel(3, -10)">-10°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(3, -1)">-1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(3, -0.5)">-0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(3, 0.5)">+0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(3, 1)">+1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(3, 10)">+10°</button>
+        </div>
+
+        <div class="card-actions-row">
+          <div class="preset-pills">
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(3, 90)">Level 90°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(3, 110)">Drop 110°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(3, 115)">Pick 115°</button>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-warning" onclick="window.app.holdChannel(3)" title="Lock position midway">🛑 Hold</button>
+            <button class="btn btn-xs btn-cyan" onclick="window.app.isolateChannel(3)" title="Power only this motor">⚡ Isolate</button>
+            <button class="btn btn-xs btn-primary" id="sweep-btn-3" onclick="window.app.testSweepChannel(3)" title="Smooth test arc">▶ Sweep</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CH 4: Wrist Roll -->
+      <div class="motor-card" id="motor-card-4">
+        <div class="motor-card-header">
+          <div class="ch-tag">
+            <span class="ch-badge">CH 4</span>
+            <span class="ch-name">Wrist Roll</span>
+            <select class="range-select" onchange="window.app.setChannelRange(4, this.value)" title="Servo Rotation Span">
+              <option value="180">0-180°</option>
+              <option value="270">0-270°</option>
+              <option value="360">0-360°</option>
+            </select>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-outline" id="toggle-pwr-4">Power ON</button>
+            <span class="ch-status-pill pill-relaxed" id="pill-status-4">RELAXED</span>
+          </div>
+        </div>
+
+        <div class="motor-center-dial">
+          <div class="gauge-container">
+            <svg class="radial-gauge" viewBox="0 0 100 60">
+              <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+              <path class="gauge-arc" id="arc-4" d="M 10 50 A 40 40 0 0 1 90 50" />
+            </svg>
+            <div class="gauge-needle" id="needle-4"></div>
+          </div>
+          <div class="angle-readout-box">
+            <div class="angle-number-wrap">
+              <span class="angle-number" id="val-4">90.00</span>
+              <span class="angle-unit">°</span>
+            </div>
+            <div class="target-readout">Target: <span id="tgt-4">90.00</span>°</div>
+            <div class="pulse-readout" id="pulse-4">~1500 µs</div>
+          </div>
+        </div>
+
+        <div class="slider-container">
+          <input type="range" class="servo-range" id="slider-4" min="0" max="180" step="0.5" value="90">
+        </div>
+
+        <div class="step-btn-group">
+          <button class="step-btn" onclick="window.app.stepChannel(4, -10)">-10°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(4, -1)">-1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(4, -0.5)">-0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(4, 0.5)">+0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(4, 1)">+1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(4, 10)">+10°</button>
+        </div>
+
+        <div class="card-actions-row">
+          <div class="preset-pills">
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(4, 45)">45°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(4, 90)">90°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(4, 135)">135°</button>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-warning" onclick="window.app.holdChannel(4)" title="Lock position midway">🛑 Hold</button>
+            <button class="btn btn-xs btn-cyan" onclick="window.app.isolateChannel(4)" title="Power only this motor">⚡ Isolate</button>
+            <button class="btn btn-xs btn-primary" id="sweep-btn-4" onclick="window.app.testSweepChannel(4)" title="Smooth test arc">▶ Sweep</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CH 5: Gripper Claw -->
+      <div class="motor-card" id="motor-card-5">
+        <div class="motor-card-header">
+          <div class="ch-tag">
+            <span class="ch-badge">CH 5</span>
+            <span class="ch-name">Gripper Claw</span>
+            <select class="range-select" onchange="window.app.setChannelRange(5, this.value)" title="Servo Rotation Span">
+              <option value="180">0-180°</option>
+              <option value="270">0-270°</option>
+              <option value="360">0-360°</option>
+            </select>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-outline" id="toggle-pwr-5">Power ON</button>
+            <span class="ch-status-pill pill-relaxed" id="pill-status-5">RELAXED</span>
+          </div>
+        </div>
+
+        <div class="motor-center-dial">
+          <div class="gauge-container">
+            <svg class="radial-gauge" viewBox="0 0 100 60">
+              <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+              <path class="gauge-arc" id="arc-5" d="M 10 50 A 40 40 0 0 1 90 50" />
+            </svg>
+            <div class="gauge-needle" id="needle-5"></div>
+          </div>
+          <div class="angle-readout-box">
+            <div class="angle-number-wrap">
+              <span class="angle-number" id="val-5">20.00</span>
+              <span class="angle-unit">°</span>
+            </div>
+            <div class="target-readout">Target: <span id="tgt-5">20.00</span>°</div>
+            <div class="pulse-readout" id="pulse-5">~800 µs (Open)</div>
+          </div>
+        </div>
+
+        <div class="slider-container">
+          <input type="range" class="servo-range" id="slider-5" min="0" max="180" step="0.5" value="20">
+        </div>
+
+        <div class="step-btn-group">
+          <button class="step-btn" onclick="window.app.stepChannel(5, -10)">-10°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(5, -1)">-1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(5, -0.5)">-0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(5, 0.5)">+0.5°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(5, 1)">+1°</button>
+          <button class="step-btn" onclick="window.app.stepChannel(5, 10)">+10°</button>
+        </div>
+
+        <div class="card-actions-row">
+          <div class="preset-pills">
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(5, 20)">Open 20°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(5, 50)">Mid 50°</button>
+            <button class="preset-pill-btn" onclick="window.app.setChannelAngle(5, 80)">Grip 80°</button>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-xs btn-warning" onclick="window.app.holdChannel(5)" title="Lock position midway">🛑 Hold</button>
+            <button class="btn btn-xs btn-cyan" onclick="window.app.isolateChannel(5)" title="Power only this motor">⚡ Isolate</button>
+            <button class="btn btn-xs btn-primary" id="sweep-btn-5" onclick="window.app.testSweepChannel(5)" title="Smooth test arc">▶ Sweep</button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ROUTINE STEPPER & QR INVENTORY MANAGEMENT HUB -->
+    <section class="qr-motion-grid">
+      
+      <!-- Left: QR Scanner & Live Camera Viewfinder -->
+      <div class="hub-card">
+        <div class="hub-header">
+          <div class="hub-title-box">
+            <span style="font-size: 20px;">📷</span>
+            <div>
+              <h3>QR Code Inventory Scanner</h3>
+              <p style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">Webcam Scan // Barcode Gun // One-Click Preset</p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button id="toggleCameraBtn" class="btn btn-xs btn-cyan">📷 Start Camera</button>
+            <button id="openQrCodesModalBtn" class="btn btn-xs btn-outline">📄 Printable QR Codes</button>
+          </div>
+        </div>
+
+        <!-- Camera Viewfinder Viewport -->
+        <div class="scanner-viewport-box" id="scannerViewport">
+          <video id="scannerVideo" class="scanner-video" playsinline></video>
+          <canvas id="scannerCanvas" class="scanner-canvas"></canvas>
+          <div class="scanner-laser" id="scannerLaser"></div>
+          <div class="scanner-placeholder" id="scannerPlaceholder">
+            <span style="font-size: 32px; opacity: 0.6;">📦</span>
+            <p>Camera is currently idle. Click <strong>"Start Camera"</strong> to scan physical QR codes.</p>
+            <p style="font-size: 11px; color: var(--cyan);">Or use the quick simulation buttons below!</p>
+          </div>
+        </div>
+
+        <!-- Quick 1-Click Inventory Simulation Buttons -->
+        <div style="margin-bottom: 14px;">
+          <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; font-family: var(--font-mono); display: block; margin-bottom: 6px;">
+            ⚡ Quick Scan Presets (Test without camera):
+          </span>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button class="btn btn-xs btn-outline" onclick="window.app.simulateScan('INV-BOX-01')">
+              📦 Scan Box #1 (Electronics)
+            </button>
+            <button class="btn btn-xs btn-outline" onclick="window.app.simulateScan('INV-BOX-02')">
+              📦 Scan Box #2 (Tools)
+            </button>
+            <button class="btn btn-xs btn-outline" onclick="window.app.simulateScan('INV-BOX-03')">
+              📦 Scan Box #3 (Sensors)
+            </button>
+            <button class="btn btn-xs btn-outline" style="border-color: var(--amber); color: #fbbf24;" onclick="window.app.simulateScan('RETURN-BIN-01')">
+              🔄 Scan Return (Reverse)
+            </button>
+          </div>
+        </div>
+
+        <!-- Manual QR or Barcode Scanner Input -->
+        <div class="console-input-row" style="margin-top: 0;">
+          <input type="text" id="manualQrInput" placeholder="Scan or type QR code (e.g. INV-BOX-01)...">
+          <button id="submitManualQrBtn" class="btn btn-primary btn-sm">Scan & Move</button>
+        </div>
+
+        <!-- Real-Time Pick & Drop Execution Progress Stepper -->
+        <div style="margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 12px; font-weight: 700; color: #fff;">🔄 Autonomous 8-Step Routine Stepper:</span>
+            <span id="routineStatusText" style="font-size: 11.5px; font-family: var(--font-mono); color: var(--cyan);">Ready</span>
+          </div>
+
+          <div class="routine-stepper" id="routineStepper">
+            <div class="step-item" id="step-1">
+              <span class="step-num">STEP 1</span>
+              <span class="step-name">📡 Sonar Check</span>
+            </div>
+            <div class="step-item" id="step-2">
+              <span class="step-num">STEP 2</span>
+              <span class="step-name">🔄 Base Align</span>
+            </div>
+            <div class="step-item" id="step-3">
+              <span class="step-num">STEP 3</span>
+              <span class="step-name">📦 Reach Down</span>
+            </div>
+            <div class="step-item" id="step-4">
+              <span class="step-num">STEP 4</span>
+              <span class="step-name">🖐 Grip Object</span>
+            </div>
+            <div class="step-item" id="step-5">
+              <span class="step-num">STEP 5</span>
+              <span class="step-name">🏗️ Vertical Lift</span>
+            </div>
+            <div class="step-item" id="step-6">
+              <span class="step-num">STEP 6</span>
+              <span class="step-name">🔄 Transfer Base</span>
+            </div>
+            <div class="step-item" id="step-7">
+              <span class="step-num">STEP 7</span>
+              <span class="step-name">📥 Lower Drop</span>
+            </div>
+            <div class="step-item" id="step-8">
+              <span class="step-num">STEP 8</span>
+              <span class="step-name">✅ Release & Home</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: Inventory Status Table -->
+      <div class="hub-card">
+        <div class="hub-header">
+          <div class="hub-title-box">
+            <span style="font-size: 20px;">📊</span>
+            <div>
+              <h3>Inventory Storage & Bin Stations</h3>
+              <p style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">Automated Logistics State</p>
+            </div>
+          </div>
+          <button id="resetInventoryBtn" class="btn btn-xs btn-outline">Reset Items</button>
+        </div>
+
+        <!-- Inventory Items Table -->
+        <div style="overflow-x: auto;">
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>ID / QR</th>
+                <th>Item Name</th>
+                <th>Pick -> Drop</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryTableBody">
+              <!-- Rendered dynamically by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- System Architecture Card -->
+        <div class="guide-content" style="margin-top: 16px;">
+          <div class="guide-card">
+            <h4>⚙️ Full 6-Axis Hardware Architecture</h4>
+            <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+              <strong>CH 0:</strong> Base Yaw (0°–180°)<br>
+              <strong>CH 1:</strong> Shoulder Pitch (Active with Feedforward Gravity Offset)<br>
+              <strong>CH 2:</strong> Elbow Pitch (Active Multi-link Dynamics)<br>
+              <strong>CH 3:</strong> Wrist Pitch (Active Gravity Balance)<br>
+              <strong>CH 4:</strong> Wrist Roll (Rotational Neutral 90°)<br>
+              <strong>CH 5:</strong> Claw (20° Open – 80° Grip)
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- BOTTOM SECTION: LIVE SERIAL CONSOLE -->
+    <section class="bottom-grid">
+      <!-- Live Serial Console -->
+      <div class="panel console-panel">
+        <div class="panel-header">
+          <h3>📡 Live Hardware Serial Stream & Telemetry Log</h3>
+          <button id="clearLogBtn" class="btn btn-xs btn-outline">Clear</button>
+        </div>
+        <div class="terminal-body" id="serialTerminal">
+          <div class="log-line log-sys">[SYS] Robotic Arm Studio initialized. All 6 channels active. Real physics engine loaded.</div>
+        </div>
+        <div class="console-input-row">
+          <input type="text" id="rawCmdInput" placeholder="Type raw serial command (e.g. STATUS, MOVE 90 90 90 90 90 20, HOME, ATTACH)...">
+          <button id="sendRawCmdBtn" class="btn btn-primary btn-sm">Send</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Printable QR Codes Modal -->
+  <div id="qrCodesModal" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 680px;">
+      <div class="modal-header">
+        <h2>📄 Printable Inventory QR Codes</h2>
+        <button id="closeQrCodesModalBtn" class="btn btn-icon">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 12px;">
+          Point your laptop camera or smartphone at these QR codes to scan them, or print this screen out:
+        </p>
+        <div class="qr-modal-grid" id="qrCodesContainer">
+          <!-- Dynamically populated with rendered QR canvases -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="window.print()">🖨️ Print Codes</button>
+        <button class="btn btn-primary" onclick="document.getElementById('qrCodesModal').style.display='none'">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firmware Flash Utility Modal -->
+  <div id="flashModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2>⚡ Arduino Firmware Flash Utility</h2>
+        <button id="closeFlashModalBtn" class="btn btn-icon">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          This pre-compiles and flashes the updated firmware with Channels 0 to 5 active, I2C Wire timeout protection, and HC-SR04 ultrasonic support (D8/D9) to your Arduino Uno over USB (<code>/dev/ttyUSB0</code>).
+        </p>
+        <div id="flashProgress" class="flash-progress-bar" style="display: none; color: var(--cyan); margin-bottom: 8px;">
+          ⏳ Flashing firmware in progress... Please do not unplug the USB cable.
+        </div>
+        <div id="flashLogOutput" class="terminal-box">
+Ready to flash firmware.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="startFlashBtn" class="btn btn-primary">⚡ Re-Flash Arduino Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Offline Bundled Libraries -->
+  <script src="/static/js/three.min.js"></script>
+  <script src="/static/js/OrbitControls.js"></script>
+  <script src="/static/js/jsQR.min.js"></script>
+  <script src="/static/js/qrcode.min.js"></script>
+
+  <!-- Dashboard Application Script -->
+  <script src="/static/js/app.js?v=6.0"></script>
+
+</body>
+</html>
