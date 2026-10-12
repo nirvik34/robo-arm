@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pick & Drop Mission Control // 6-DOF Robotic Arm</title>
+  
+  <style>
+    :root {
+      --bg-deep: #070a12;
+      --bg-surface: #0e1526;
+      --bg-card: rgba(16, 24, 42, 0.9);
+      --bg-card-hover: rgba(22, 33, 58, 0.95);
+      
+      --border-subtle: #1e2c47;
+      --border-bright: #2d4268;
+      --border-glow: #00f3ff;
+      
+      --text-main: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      
+      --cyan: #00f3ff;
+      --cyan-glow: rgba(0, 243, 255, 0.35);
+      --blue: #3b82f6;
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.35);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.35);
+      --red: #ef4444;
+      --red-glow: rgba(239, 68, 68, 0.35);
+      --purple: #8b5cf6;
+
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-deep);
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(0, 243, 255, 0.04) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(59, 130, 246, 0.04) 0%, transparent 40%),
+        linear-gradient(rgba(14, 21, 38, 0.4) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(14, 21, 38, 0.4) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Top Navigation Header */
+    .header {
+      height: 64px;
+      background: rgba(11, 16, 30, 0.94);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      font-size: 26px;
+      filter: drop-shadow(0 0 10px rgba(0, 243, 255, 0.5));
+    }
+
+    .brand-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      color: #fff;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Status Pill */
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--emerald);
+    }
+
+    .status-pill.simulated {
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: var(--amber);
+    }
+
+    .status-pill.offline {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: var(--red);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid transparent;
+      outline: none;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7 0%, #00f3ff 100%);
+      color: #000;
+      box-shadow: 0 2px 12px var(--cyan-glow);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      background: rgba(14, 21, 38, 0.8);
+      border-color: var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    .btn-outline:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 243, 255, 0.05);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .btn-danger:hover {
+      background: var(--red);
+      color: #fff;
+      box-shadow: 0 0 16px var(--red-glow);
+    }
+
+    /* Dashboard Layout Grid */
+    .dashboard-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+      padding: 20px 24px;
+      max-width: 1700px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 1100px) {
+      .dashboard-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Left Column: 3D Workcell Viewport */
+    .viewport-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      min-height: 580px;
+    }
+
+    .viewport-header {
+      padding: 12px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(11, 16, 30, 0.7);
+      border-bottom: 1px solid var(--border-subtle);
+      z-index: 10;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .viewport-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #canvas3d {
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+    }
+
+    .viewport-canvas-box {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      min-height: 500px;
+      background: #060913;
+    }
+
+    /* Floating Viewport HUD */
+    .viewport-hud {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .hud-card {
+      background: rgba(11, 16, 30, 0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 10px 14px;
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+
+    .hud-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .hud-val {
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--cyan);
+    }
+
+    .angles-strip {
+      display: flex;
+      gap: 10px;
+    }
+
+    .angle-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .angle-chip-name {
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+
+    .angle-chip-val {
+      font-size: 12px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: #fff;
+    }
+
+    /* Right Column: Mission Control Cards */
+    .controls-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* State Stepper Progress Bar */
+    .stepper-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .stepper-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .stepper-state-badge {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: rgba(0, 243, 255, 0.1);
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+    }
+
+    .stepper-track {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      margin: 8px 0;
+    }
+
+    .stepper-line {
+      position: absolute;
+      top: 50%;
+      left: 10px;
+      right: 10px;
+      height: 3px;
+      background: #1e293b;
+      transform: translateY(-50%);
+      z-index: 1;
+    }
+
+    .stepper-progress-fill {
+      position: absolute;
+      top: 50%;
+      left: 10px;
+      width: 0%;
+      height: 3px;
+      background: linear-gradient(90deg, #0284c7, var(--cyan));
+      box-shadow: 0 0 10px var(--cyan);
+      transform: translateY(-50%);
+      z-index: 1;
+      transition: width 0.4s ease;
+    }
+
+    .step-node {
+      position: relative;
+      z-index: 2;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #0f172a;
+      border: 2px solid #334155;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: #94a3b8;
+      transition: all 0.3s;
+    }
+
+    .step-node.active {
+      border-color: var(--cyan);
+      background: #0284c7;
+      color: #fff;
+      box-shadow: 0 0 12px var(--cyan-glow);
+      transform: scale(1.15);
+    }
+
+    .step-node.completed {
+      border-color: var(--emerald);
+      background: var(--emerald);
+      color: #000;
+      font-weight: bold;
+    }
+
+    .step-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-family: var(--font-mono);
+    }
+
+    /* Active Scanned Item Card */
+    .mission-hero-card {
+      border: 1px solid var(--border-glow);
+      background: linear-gradient(180deg, rgba(14, 29, 54, 0.95) 0%, rgba(16, 24, 42, 0.9) 100%);
+      box-shadow: 0 0 24px rgba(0, 243, 255, 0.15);
+    }
+
+    .mission-meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .meta-box {
+      background: rgba(7, 10, 18, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .meta-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--text-muted);
+    }
+
+    .meta-val {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .route-display {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(7, 10, 18, 0.75);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .route-node {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .route-node-title {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .route-node-station {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .route-arrow-icon {
+      font-size: 22px;
+      color: var(--cyan);
+      animation: pulseMove 1.5s infinite;
+    }
+
+    @keyframes pulseMove {
+      0%, 100% { transform: translateX(0); opacity: 0.6; }
+      50% { transform: translateX(5px); opacity: 1; }
+    }
+
+    /* Execution Trigger Button */
+    .btn-execute {
+      padding: 16px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #10b981 0%, #00f3ff 100%);
+      color: #060913;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 20px var(--cyan-glow);
+      transition: all 0.2s;
+    }
+
+    .btn-execute:hover {
+      filter: brightness(1.1);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px var(--cyan-glow);
+    }
+
+    .btn-execute.pulse {
+      animation: executeGlow 1.8s infinite;
+    }
+
+    @keyframes executeGlow {
+      0%, 100% { box-shadow: 0 0 16px var(--cyan-glow); }
+      50% { box-shadow: 0 0 32px var(--cyan-glow); }
+    }
+
+    /* Switch toggle */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 0;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #1e293b;
+      border-radius: 24px;
+      transition: .3s;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background-color: #fff;
+      border-radius: 50%;
+      transition: .3s;
+    }
+
+    input:checked + .slider {
+      background-color: var(--cyan);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+      background-color: #070a12;
+    }
+
+    /* Quick Presets Grid */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    @media (max-width: 600px) {
+      .preset-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .preset-chip {
+      background: rgba(7, 10, 18, 0.7);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      text-align: left;
+      cursor: pointer;
+      color: #fff;
+      transition: all 0.2s;
+    }
+
+    .preset-chip:hover {
+      border-color: var(--cyan);
+      background: rgba(0, 243, 255, 0.08);
+      transform: translateY(-2px);
+    }
+
+    .preset-chip-title {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .preset-chip-desc {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* Dispatch Log Table */
+    .table-container {
+      max-height: 220px;
+      overflow-y: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(11, 16, 30, 0.9);
+      padding: 8px 12px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+    }
+
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      color: var(--text-secondary);
+    }
+
+    tr:hover td {
+      background: rgba(0, 243, 255, 0.03);
+      color: #fff;
+    }
+
+    /* Modal Overlay */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glow);
+      border-radius: 20px;
+      padding: 28px;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 0 40px rgba(0, 243, 255, 0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      text-align: center;
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 18px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 22px;
+      cursor: pointer;
+    }
+
+    .modal-close:hover { color: #fff; }
+
+    .qr-render-box {
+      background: #fff;
+      padding: 16px;
+      border-radius: 12px;
+      margin: 0 auto;
+      display: inline-block;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+
+    .qr-cards-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .qr-target-item {
+      background: rgba(7, 10, 18, 0.7);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .qr-target-item .qr-img {
+      background: #fff;
+      padding: 8px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top App Navigation -->
+  <header class="header">
+    <div class="brand">
+      <span class="brand-icon">🦾</span>
+      <div class="brand-info">
+        <span class="brand-title">RoboArm // Pick & Drop Mission Control</span>
+        <span class="brand-subtitle">Dedicated QR Dispatch & Autonomous Kinematics Twin</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <!-- Status Badge -->
+      <div id="hwStatusBadge" class="status-pill">
+        <span class="status-dot"></span>
+        <span id="hwStatusText">Connecting...</span>
+      </div>
+
+      <!-- Quick Mode Switcher -->
+      <button class="btn btn-outline" id="toggleSimBtn">
+        <span>🔄 Sim / HW Mode</span>
+      </button>
+
+      <!-- Pair Phone Scanner Button -->
+      <button class="btn btn-primary" id="openPairPhoneBtn">
+        <span>📱 Connect Phone Scanner</span>
+      </button>
+
+      <!-- Printable QR Targets Button -->
+      <button class="btn btn-outline" id="openTargetsBtn">
+        <span>🏷️ QR Targets</span>
+      </button>
+
+      <!-- Safe Home Button -->
+      <button class="btn btn-outline" id="safeHomeBtn">
+        <span>🏠 Safe Home</span>
+      </button>
+
+      <!-- Emergency Stop Button -->
+      <button class="btn btn-danger" id="eStopBtn">
+        <span>🛑 EMERGENCY STOP</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Container -->
+  <div class="dashboard-container">
+
+    <!-- LEFT COLUMN: Real-Time 3D Robotic Arm & Workcell Twin -->
+    <div class="viewport-panel">
+      <div class="viewport-header">
+        <div class="panel-title">
+          <span>🌐 3D Digital Twin Workcell</span>
+        </div>
+        <div class="viewport-tools">
+          <button class="btn btn-outline" id="resetCamBtn" style="padding: 4px 10px; font-size: 11px;">Reset View</button>
+          <button class="btn btn-outline" id="toggleTrailBtn" style="padding: 4px 10px; font-size: 11px;">Motion Trail</button>
+        </div>
+      </div>
+
+      <div class="viewport-canvas-box" id="viewportContainer">
+        <canvas id="canvas3d"></canvas>
+
+        <!-- Floating Telemetry HUD -->
+        <div class="viewport-hud">
+          <div class="hud-card">
+            <span class="hud-label">TCP Cartesian Position</span>
+            <span class="hud-val" id="hudXyz">X: 0.0 | Y: 0.0 | Z: 420.0 mm</span>
+          </div>
+
+          <div class="hud-card">
+            <span class="hud-label">Live Joint Angles</span>
+            <div class="angles-strip">
+              <div class="angle-chip"><span class="angle-chip-name">BASE</span><span class="angle-chip-val" id="ang0">90°</span></div>
+              <div class="angle-chip"><span class="angle-chip-name">SHLDR</span><span class="angle-chip-val" id="ang1">90°</span></div>
+              <div class="angle-chip"><span class="angle-chip-name">ELBOW</span><span class="angle-chip-val" id="ang2">90°</span></div>
+              <div class="angle-chip"><span class="angle-chip-name">PITCH</span><span class="angle-chip-val" id="ang3">90°</span></div>
+              <div class="angle-chip"><span class="angle-chip-name">ROLL</span><span class="angle-chip-val" id="ang4">90°</span></div>
+              <div class="angle-chip"><span class="angle-chip-name">CLAW</span><span class="angle-chip-val" id="ang5">20°</span></div>
+            </div>
+          </div>
+
+          <div class="hud-card">
+            <span class="hud-label">Sonar Distance</span>
+            <span class="hud-val" id="hudSonar">-- cm</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN: Mission & Dispatch Center -->
+    <div class="controls-panel">
+
+      <!-- Sequence Stepper Progress Tracker -->
+      <div class="card stepper-container">
+        <div class="stepper-header">
+          <span class="panel-title">⚙️ Execution Sequence</span>
+          <span class="stepper-state-badge" id="stepperBadge">STANDBY / READY</span>
+        </div>
+
+        <div class="stepper-track">
+          <div class="stepper-line"></div>
+          <div class="stepper-progress-fill" id="stepperProgressFill"></div>
+          
+          <div class="step-node" id="stepNode1">1</div>
+          <div class="step-node" id="stepNode2">2</div>
+          <div class="step-node" id="stepNode3">3</div>
+          <div class="step-node" id="stepNode4">4</div>
+          <div class="step-node" id="stepNode5">5</div>
+          <div class="step-node" id="stepNode6">6</div>
+          <div class="step-node" id="stepNode7">7</div>
+          <div class="step-node" id="stepNode8">8</div>
+          <div class="step-node" id="stepNode9">9</div>
+        </div>
+
+        <div class="step-labels">
+          <span>Sonar</span>
+          <span>Align</span>
+          <span>Reach</span>
+          <span>Grip</span>
+          <span>Lift</span>
+          <span>Transfer</span>
+          <span>Lower</span>
+          <span>Release</span>
+          <span>Home</span>
+        </div>
+      </div>
+
+      <!-- Active Scanned Order Card -->
+      <div class="card mission-hero-card">
+        <div class="stepper-header">
+          <span class="panel-title" style="color: var(--cyan);">🎯 Active Dispatch Order</span>
+          <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);" id="orderSource">Awaiting Mobile Scan...</span>
+        </div>
+
+        <div class="mission-meta-grid">
+          <div class="meta-box">
+            <span class="meta-label">Object / Puck Name</span>
+            <span class="meta-val" id="activeObjName">Box #1 (Electronics Module)</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">QR SKU / Payload</span>
+            <span class="meta-val" style="color: var(--cyan); font-family: var(--font-mono);" id="activeObjSku">INV-BOX-01</span>
+          </div>
+        </div>
+
+        <!-- Visual Route Banner -->
+        <div class="route-display">
+          <div class="route-node">
+            <span class="route-node-title">Pickup Station</span>
+            <span class="route-node-station" id="activePickStation">Station A (45.0°)</span>
+          </div>
+          <div class="route-arrow-icon">➔</div>
+          <div class="route-node" style="text-align: right;">
+            <span class="route-node-title">Target Drop Bin</span>
+            <span class="route-node-station" id="activeDropStation">Drop Bin 1 (135.0°)</span>
+          </div>
+        </div>
+
+        <!-- Auto-Execute Toggle -->
+        <div class="toggle-row">
+          <div>
+            <div style="font-size: 13px; font-weight: 600;">Auto-Run on Phone Scan</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Instantly execute robotic arm when phone detects QR</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="laptopAutoExecute" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <!-- Big Trigger Button -->
+        <button class="btn-execute pulse" id="runMissionBtn">
+          <span>▶️ EXECUTE PICK & DROP ROUTINE</span>
+        </button>
+      </div>
+
+      <!-- Quick Test Presets (1-Click Trigger without Phone) -->
+      <div class="card">
+        <div class="stepper-header">
+          <span class="panel-title">📦 Quick Test Pucks</span>
+          <span style="font-size: 11px; color: var(--text-muted);">Direct Laptop Trigger</span>
+        </div>
+
+        <div class="preset-grid">
+          <div class="preset-chip" data-code="INV-BOX-01">
+            <span class="preset-chip-title">Box #1</span>
+            <span class="preset-chip-desc">45° ➔ 135° (Elec)</span>
+          </div>
+          <div class="preset-chip" data-code="INV-BOX-02">
+            <span class="preset-chip-title">Box #2</span>
+            <span class="preset-chip-desc">45° ➔ 160° (Tools)</span>
+          </div>
+          <div class="preset-chip" data-code="INV-BOX-03">
+            <span class="preset-chip-title">Box #3</span>
+            <span class="preset-chip-desc">60° ➔ 135° (Sens)</span>
+          </div>
+          <div class="preset-chip" data-code="RETURN-BIN-01">
+            <span class="preset-chip-title">Return Bin</span>
+            <span class="preset-chip-desc">135° ➔ 45° (Restock)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dispatch History Table -->
+      <div class="card">
+        <div class="stepper-header">
+          <span class="panel-title">📋 Live Dispatch Log</span>
+          <button class="btn btn-outline" id="clearLogBtn" style="padding: 2px 8px; font-size: 11px;">Clear Log</button>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Item / SKU</th>
+                <th>Pick</th>
+                <th>Drop</th>
+                <th>Source</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="dispatchTableBody">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 16px;">
+                  No dispatches recorded yet. Connect phone scanner to begin!
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL 1: Connect Phone Scanner -->
+  <div class="modal-overlay" id="phoneModal">
+    <div class="modal-card">
+      <button class="modal-close" id="closePhoneModalBtn">&times;</button>
+      <h2 style="font-size: 20px; font-weight: 800;">📱 Connect Your Phone Scanner</h2>
+      <p style="font-size: 13px; color: var(--text-secondary);">
+        Scan this QR code with your iPhone or Android camera to open the high-speed Mobile Scanner.
+      </p>
+
+      <div class="qr-render-box" id="scannerQrTarget"></div>
+
+      <div style="background: rgba(7, 10, 18, 0.6); padding: 12px; border-radius: 10px; border: 1px solid var(--border-subtle);">
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Or open this URL directly in phone browser:</div>
+        <div id="phoneUrlText" style="font-size: 14px; font-weight: bold; color: var(--cyan); font-family: var(--font-mono); word-break: break-all;">
+          http://172.16.45.119:8000/scanner
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="copyPhoneUrlBtn">
+        <span>📋 Copy Scanner Link</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL 2: Printable & Test Target QR Codes -->
+  <div class="modal-overlay" id="targetsModal">
+    <div class="modal-card" style="max-width: 680px;">
+      <button class="modal-close" id="closeTargetsModalBtn">&times;</button>
+      <h2 style="font-size: 20px; font-weight: 800;">🏷️ QR Target Pucks for Scanning</h2>
+      <p style="font-size: 13px; color: var(--text-secondary);">
+        Point your phone camera at any of these QR codes on your screen to trigger the robot arm!
+      </p>
+
+      <div class="qr-cards-grid">
+        <div class="qr-target-item">
+          <strong>Box #1 (Electronics)</strong>
+          <span style="font-size: 11px; color: var(--text-muted);">Station A (45°) ➔ Bin 1 (135°)</span>
+          <div class="qr-img" id="qrTarget1"></div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--cyan);">INV-BOX-01</span>
+        </div>
+
+        <div class="qr-target-item">
+          <strong>Box #2 (Tools)</strong>
+          <span style="font-size: 11px; color: var(--text-muted);">Station A (45°) ➔ Bin 2 (160°)</span>
+          <div class="qr-img" id="qrTarget2"></div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--cyan);">INV-BOX-02</span>
+        </div>
+
+        <div class="qr-target-item">
+          <strong>Box #3 (Sensors)</strong>
+          <span style="font-size: 11px; color: var(--text-muted);">Station B (60°) ➔ Bin 1 (135°)</span>
+          <div class="qr-img" id="qrTarget3"></div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--cyan);">INV-BOX-03</span>
+        </div>
+
+        <div class="qr-target-item">
+          <strong>Return Bin (Restock)</strong>
+          <span style="font-size: 11px; color: var(--text-muted);">Bin 1 (135°) ➔ Station A (45°)</span>
+          <div class="qr-img" id="qrTarget4"></div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--amber);">RETURN-BIN-01</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Libraries -->
+  <script src="/static/js/three.min.js"></script>
+  <script src="/static/js/OrbitControls.js"></script>
+  <script src="/static/js/qrcode.min.js"></script>
+
+  <script>
+    // --- Application State ---
+    const appState = {
+      cur: [90.0, 90.0, 90.0, 90.0, 90.0, 20.0],
+      tgt: [90.0, 90.0, 90.0, 90.0, 90.0, 20.0],
+      routine: 0,
+      connected: false,
+      simulated: false,
+      dist: -1.0,
+      activeItem: {
+        id: "INV-BOX-01",
+        name: "Box #1 (Electronics Module)",
+        sku: "INV-BOX-01",
+        pick_base: 45.0,
+        drop_base: 135.0,
+        is_reverse: false,
+        location: "Station A (45.0°)",
+        target_bin: "Drop Bin 1 (135.0°)"
+      }
+    };
+
+    let ws = null;
+
+    // --- Three.js Digital Twin Setup ---
+    let scene, camera, renderer, controls;
+    let armJoints = [];
+    let clawJaws = { left: null, right: null };
+    let payloadMesh = null;
+    let pickStationPad = null;
+    let dropStationPad = null;
+    let trailLine = null;
+    let trailPoints = [];
+    let trailEnabled = true;
+
+    function initThreeJs() {
+      const container = document.getElementById('viewportContainer');
+      const canvas = document.getElementById('canvas3d');
+      if (!container || !canvas || typeof THREE === 'undefined') return;
+
+      const width = container.clientWidth || 700;
+      const height = container.clientHeight || 550;
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x060913);
+      scene.fog = new THREE.FogExp2(0x060913, 0.0012);
+
+      camera = new THREE.PerspectiveCamera(45, width / height, 1, 3000);
+      camera.position.set(400, 320, 420);
+
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.maxPolarAngle = Math.PI / 2 - 0.02;
+      controls.target.set(0, 130, 0);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0x00f3ff, 1.2);
+      dirLight.position.set(200, 450, 250);
+      dirLight.castShadow = true;
+      scene.add(dirLight);
+
+      const warmLight = new THREE.DirectionalLight(0xffaa55, 0.6);
+      warmLight.position.set(-250, 300, -200);
+      scene.add(warmLight);
+
+      // Floor Grid
+      const grid = new THREE.GridHelper(900, 45, 0x00f3ff, 0x162238);
+      grid.position.y = 0;
+      scene.add(grid);
+
+      // Workcell Markers: Pick Station & Drop Bin Pads
+      setupWorkcellMarkers();
+
+      // Robot Arm 3D Model
+      buildRobotArmModel();
+
+      // Motion Trail
+      const trailGeo = new THREE.BufferGeometry();
+      const trailMat = new THREE.LineBasicMaterial({ color: 0x00f3ff, transparent: true, opacity: 0.7, linewidth: 2 });
+      trailLine = new THREE.Line(trailGeo, trailMat);
+      scene.add(trailLine);
+
+      // Animation Loop
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        updateRobotJointAngles();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      });
+    }
+
+    function setupWorkcellMarkers() {
+      // Pick Pad (Station A at ~45°)
+      const pickRadius = 240;
+      const pickAngleRad = THREE.MathUtils.degToRad(45 - 90);
+      const pickX = Math.sin(-pickAngleRad) * pickRadius;
+      const pickZ = Math.cos(-pickAngleRad) * pickRadius;
+
+      const pickPadGeo = new THREE.CylinderGeometry(40, 45, 8, 32);
+      const pickPadMat = new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x044422, roughness: 0.3 });
+      pickStationPad = new THREE.Mesh(pickPadGeo, pickPadMat);
+      pickStationPad.position.set(pickX, 4, pickZ);
+      scene.add(pickStationPad);
+
+      // Pick Pedestal Label Ring
+      const pickRing = new THREE.Mesh(new THREE.RingGeometry(48, 54, 32), new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide }));
+      pickRing.rotation.x = -Math.PI / 2;
+      pickRing.position.set(pickX, 1, pickZ);
+      scene.add(pickRing);
+
+      // Drop Pad (Bin 1 at ~135°)
+      const dropRadius = 240;
+      const dropAngleRad = THREE.MathUtils.degToRad(135 - 90);
+      const dropX = Math.sin(-dropAngleRad) * dropRadius;
+      const dropZ = Math.cos(-dropAngleRad) * dropRadius;
+
+      const dropPadGeo = new THREE.CylinderGeometry(45, 45, 20, 32);
+      const dropPadMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, emissive: 0x002244, roughness: 0.3 });
+      dropStationPad = new THREE.Mesh(dropPadGeo, dropPadMat);
+      dropStationPad.position.set(dropX, 10, dropZ);
+      scene.add(dropStationPad);
+
+      const dropRing = new THREE.Mesh(new THREE.RingGeometry(52, 58, 32), new THREE.MeshBasicMaterial({ color: 0x00f3ff, side: THREE.DoubleSide }));
+      dropRing.rotation.x = -Math.PI / 2;
+      dropRing.position.set(dropX, 1, dropZ);
+      scene.add(dropRing);
+    }
+
+    function buildRobotArmModel() {
+      const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.25 });
+      const jointMat = new THREE.MeshStandardMaterial({ color: 0x00f3ff, metalness: 0.9, roughness: 0.2, emissive: 0x003344 });
+      const linkMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
+      const clawMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.8, roughness: 0.3 });
+
+      // Stationary Base Pedestal
+      const basePedestal = new THREE.Mesh(new THREE.CylinderGeometry(55, 65, 30, 32), metalMat);
+      basePedestal.position.y = 15;
+      scene.add(basePedestal);
+
+      // CH 0: Base Turntable (Rotates around Y)
+      const baseTurntable = new THREE.Group();
+      baseTurntable.position.y = 30;
+      scene.add(baseTurntable);
+
+      const turntableMesh = new THREE.Mesh(new THREE.CylinderGeometry(48, 48, 20, 32), jointMat);
+      turntableMesh.position.y = 10;
+      baseTurntable.add(turntableMesh);
+
+      // Brackets
+      const leftBracket = new THREE.Mesh(new THREE.BoxGeometry(12, 40, 36), metalMat);
+      leftBracket.position.set(-22, 35, 0);
+      baseTurntable.add(leftBracket);
+      const rightBracket = new THREE.Mesh(new THREE.BoxGeometry(12, 40, 36), metalMat);
+      rightBracket.position.set(22, 35, 0);
+      baseTurntable.add(rightBracket);
+
+      // CH 1: Shoulder Joint
+      const shoulderJoint = new THREE.Group();
+      shoulderJoint.position.set(0, 45, 0);
+      baseTurntable.add(shoulderJoint);
+
+      const shoulderPin = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 46, 24), jointMat);
+      shoulderPin.rotation.z = Math.PI / 2;
+      shoulderJoint.add(shoulderPin);
+
+      // Upper Arm Link (125mm)
+      const link1 = new THREE.Group();
+      shoulderJoint.add(link1);
+
+      const armMesh = new THREE.Mesh(new THREE.BoxGeometry(22, 125, 26), linkMat);
+      armMesh.position.y = 62.5;
+      link1.add(armMesh);
+
+      // CH 2: Elbow Joint
+      const elbowJoint = new THREE.Group();
+      elbowJoint.position.set(0, 125, 0);
+      link1.add(elbowJoint);
+
+      const elbowPin = new THREE.Mesh(new THREE.CylinderGeometry(13, 13, 38, 24), jointMat);
+      elbowPin.rotation.z = Math.PI / 2;
+      elbowJoint.add(elbowPin);
+
+      // Forearm Link (125mm)
+      const link2 = new THREE.Group();
+      elbowJoint.add(link2);
+
+      const forearmMesh = new THREE.Mesh(new THREE.BoxGeometry(18, 125, 22), linkMat);
+      forearmMesh.position.y = 62.5;
+      link2.add(forearmMesh);
+
+      // CH 3: Wrist Pitch Joint
+      const wristPitchJoint = new THREE.Group();
+      wristPitchJoint.position.set(0, 125, 0);
+      link2.add(wristPitchJoint);
+
+      const wristPin = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 30, 24), jointMat);
+      wristPin.rotation.z = Math.PI / 2;
+      wristPitchJoint.add(wristPin);
+
+      // CH 4: Wrist Roll Joint
+      const wristRollJoint = new THREE.Group();
+      wristRollJoint.position.set(0, 25, 0);
+      wristPitchJoint.add(wristRollJoint);
+
+      const rollMesh = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 20, 24), metalMat);
+      rollMesh.position.y = 10;
+      wristRollJoint.add(rollMesh);
+
+      // CH 5: Gripper Assembly
+      const gripperMount = new THREE.Group();
+      gripperMount.position.y = 20;
+      wristRollJoint.add(gripperMount);
+
+      const gripperBlock = new THREE.Mesh(new THREE.BoxGeometry(45, 12, 22), metalMat);
+      gripperBlock.position.y = 6;
+      gripperMount.add(gripperBlock);
+
+      const leftJaw = new THREE.Mesh(new THREE.BoxGeometry(6, 42, 10), clawMat);
+      leftJaw.position.set(-16, 26, 0);
+      gripperMount.add(leftJaw);
+
+      const rightJaw = new THREE.Mesh(new THREE.BoxGeometry(6, 42, 10), clawMat);
+      rightJaw.position.set(16, 26, 0);
+      gripperMount.add(rightJaw);
+
+      clawJaws = { left: leftJaw, right: rightJaw };
+
+      // Payload Puck/Box
+      payloadMesh = new THREE.Mesh(new THREE.BoxGeometry(24, 24, 24), new THREE.MeshStandardMaterial({
+        color: 0xf59e0b, metalness: 0.2, roughness: 0.5, emissive: 0x442200
+      }));
+      payloadMesh.position.set(0, 32, 0);
+      gripperMount.add(payloadMesh);
+
+      armJoints = [baseTurntable, shoulderJoint, elbowJoint, wristPitchJoint, wristRollJoint, gripperMount];
+    }
+
+    function updateRobotJointAngles() {
+      if (!armJoints || armJoints.length < 5) return;
+      const cur = appState.cur;
+
+      // CH 0: Base Yaw
+      armJoints[0].rotation.y = -THREE.MathUtils.degToRad(cur[0] - 90);
+
+      // CH 1: Shoulder Pitch
+      armJoints[1].rotation.x = THREE.MathUtils.degToRad(cur[1] - 90);
+
+      // CH 2: Elbow Pitch
+      armJoints[2].rotation.x = THREE.MathUtils.degToRad(cur[2] - 90);
+
+      // CH 3: Wrist Pitch
+      armJoints[3].rotation.x = THREE.MathUtils.degToRad(cur[3] - 90);
+
+      // CH 4: Wrist Roll
+      armJoints[4].rotation.y = THREE.MathUtils.degToRad(cur[4] - 90);
+
+      // CH 5: Claw Jaws
+      const clawVal = cur[5];
+      const jawSpread = THREE.MathUtils.lerp(18, 6, (clawVal - 20) / 60);
+      if (clawJaws.left && clawJaws.right) {
+        clawJaws.left.position.x = -jawSpread;
+        clawJaws.right.position.x = jawSpread;
+      }
+
+      // Payload visible when claw firmly clamped (>40°)
+      if (payloadMesh) {
+        payloadMesh.visible = (clawVal > 40);
+      }
+
+      // Motion Trail
+      if (trailLine && trailEnabled && armJoints[5]) {
+        const tcp = new THREE.Vector3();
+        armJoints[5].getWorldPosition(tcp);
+        tcp.y += 32;
+
+        const len = trailPoints.length;
+        if (len === 0 || trailPoints[len - 1].distanceTo(tcp) > 2) {
+          trailPoints.push(tcp.clone());
+          if (trailPoints.length > 250) trailPoints.shift();
+          trailLine.geometry.setFromPoints(trailPoints);
+        }
+      }
+    }
+
+    // --- WebSocket Telemetry & Dispatch Events ---
+    function initWebSocket() {
+      const loc = window.location;
+      const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProto}//${loc.host}/ws`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        document.getElementById('hwStatusBadge').classList.remove('offline');
+        document.getElementById('hwStatusText').textContent = 'ONLINE';
+      };
+
+      ws.onclose = () => {
+        document.getElementById('hwStatusBadge').classList.add('offline');
+        document.getElementById('hwStatusText').textContent = 'RECONNECTING...';
+        setTimeout(initWebSocket, 2000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'telemetry') {
+            onTelemetry(msg.data);
+          } else if (msg.type === 'qr_dispatch') {
+            onQrDispatchReceived(msg);
+          }
+        } catch (e) {}
+      };
+    }
+
+    const ROUTINE_DESCS = [
+      "STANDBY / READY FOR SCAN",
+      "CHECKING ULTRASONIC CLEARANCE",
+      "APPROACHING PICK AZIMUTH",
+      "DESCENDING ONTO PAYLOAD",
+      "FIRMLY CLAMPING GRIPPER",
+      "VERTICAL LIFT (ANTI-DROOP)",
+      "TRANSFERRING TO DROP STATION",
+      "LOWERING INTO TARGET BIN",
+      "RELEASING GRIPPER",
+      "RETRACTING LINKAGE",
+      "SAFE HOME RETURN COMPLETE"
+    ];
+
+    function onTelemetry(data) {
+      if (!data) return;
+
+      if (data.cur) {
+        appState.cur = data.cur;
+        document.getElementById('ang0').textContent = `${Math.round(data.cur[0])}°`;
+        document.getElementById('ang1').textContent = `${Math.round(data.cur[1])}°`;
+        document.getElementById('ang2').textContent = `${Math.round(data.cur[2])}°`;
+        document.getElementById('ang3').textContent = `${Math.round(data.cur[3])}°`;
+        document.getElementById('ang4').textContent = `${Math.round(data.cur[4])}°`;
+        document.getElementById('ang5').textContent = `${Math.round(data.cur[5])}°`;
+      }
+
+      if (data.dist !== undefined) {
+        document.getElementById('hudSonar').textContent = (data.dist >= 0) ? `${data.dist.toFixed(1)} cm` : '-- cm';
+      }
+
+      if (data.physics?.tcp_position) {
+        const tcp = data.physics.tcp_position;
+        document.getElementById('hudXyz').textContent = `X: ${tcp.x.toFixed(1)} | Y: ${tcp.y.toFixed(1)} | Z: ${tcp.z.toFixed(1)} mm`;
+      }
+
+      // Routine State Machine Tracker
+      const r = data.routine || 0;
+      const stepIdx = data.routine_step || r;
+      updateStepperUI(stepIdx, data.routine_desc);
+
+      // Hardware / Simulated badge
+      const hwBadge = document.getElementById('hwStatusBadge');
+      const hwText = document.getElementById('hwStatusText');
+      if (data.simulated) {
+        hwBadge.className = 'status-pill simulated';
+        hwText.textContent = 'SIMULATED TWIN';
+      } else if (data.connected) {
+        hwBadge.className = 'status-pill';
+        hwText.textContent = `HARDWARE ONLINE (${data.port || 'USB'})`;
+      }
+    }
+
+    function updateStepperUI(stepIdx, customDesc) {
+      const badge = document.getElementById('stepperBadge');
+      const fill = document.getElementById('stepperProgressFill');
+
+      if (stepIdx > 0 && stepIdx <= 9) {
+        badge.textContent = customDesc || ROUTINE_DESCS[stepIdx] || `STEP ${stepIdx}/9`;
+        badge.style.color = '#00f3ff';
+        badge.style.borderColor = '#00f3ff';
+        fill.style.width = `${((stepIdx - 1) / 8) * 100}%`;
+      } else {
+        badge.textContent = "STANDBY // READY";
+        badge.style.color = '#10b981';
+        badge.style.borderColor = '#10b981';
+        fill.style.width = `0%`;
+      }
+
+      for (let i = 1; i <= 9; i++) {
+        const node = document.getElementById(`stepNode${i}`);
+        if (!node) continue;
+        if (i < stepIdx) {
+          node.className = 'step-node completed';
+          node.textContent = '✓';
+        } else if (i === stepIdx) {
+          node.className = 'step-node active';
+          node.textContent = i;
+        } else {
+          node.className = 'step-node';
+          node.textContent = i;
+        }
+      }
+    }
+
+    function onQrDispatchReceived(msg) {
+      if (!msg.item) return;
+      appState.activeItem = msg.item;
+
+      document.getElementById('activeObjName').textContent = msg.item.name;
+      document.getElementById('activeObjSku').textContent = msg.item.sku || msg.item.id;
+      document.getElementById('activePickStation').textContent = msg.item.location || `Pick (${msg.item.pick_base}°)`;
+      document.getElementById('activeDropStation').textContent = msg.item.target_bin || `Drop (${msg.item.drop_base}°)`;
+      document.getElementById('orderSource').textContent = `📱 Scanned via ${msg.source || 'Mobile Scanner'}`;
+
+      // Add to table
+      addDispatchRow(msg.history || {
+        timestamp: new Date().toLocaleTimeString(),
+        item_name: msg.item.name,
+        sku: msg.item.sku || msg.item.id,
+        pick_base: msg.item.pick_base,
+        drop_base: msg.item.drop_base,
+        source: msg.source || "mobile",
+        status: msg.auto_executed ? "Running" : "Queued"
+      });
+    }
+
+    function addDispatchRow(rec) {
+      const tbody = document.getElementById('dispatchTableBody');
+      const emptyRow = tbody.querySelector('td[colspan="6"]');
+      if (emptyRow) emptyRow.parentElement.remove();
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="font-family: var(--font-mono); color: var(--cyan);">${rec.timestamp || new Date().toLocaleTimeString()}</td>
+        <td><strong>${rec.item_name}</strong> <span style="font-size:10px; color:var(--text-muted);">(${rec.sku})</span></td>
+        <td>${rec.pick_base}°</td>
+        <td>${rec.drop_base}°</td>
+        <td><span style="font-size: 11px;">${rec.source || 'mobile'}</span></td>
+        <td><span style="color: var(--emerald); font-weight:600;">${rec.status || 'Success'}</span></td>
+      `;
+      tbody.insertBefore(tr, tbody.firstChild);
+    }
+
+    // --- Action Listeners ---
+    document.getElementById('runMissionBtn').addEventListener('click', async () => {
+      const itm = appState.activeItem;
+      if (!itm) return;
+
+      try {
+        await fetch('/api/dispatch/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_id: itm.id,
+            pick_base: itm.pick_base,
+            drop_base: itm.drop_base,
+            reverse: itm.is_reverse,
+            name: itm.name
+          })
+        });
+      } catch (e) {
+        console.error('Execute error:', e);
+      }
+    });
+
+    document.getElementById('safeHomeBtn').addEventListener('click', async () => {
+      await fetch('/api/pose/home_safe', { method: 'POST' });
+    });
+
+    document.getElementById('eStopBtn').addEventListener('click', async () => {
+      await fetch('/api/routine/halt', { method: 'POST' });
+    });
+
+    document.getElementById('toggleSimBtn').addEventListener('click', async () => {
+      const isSim = !appState.simulated;
+      await fetch(`/api/simulation?enable=${isSim}`, { method: 'POST' });
+    });
+
+    document.getElementById('resetCamBtn').addEventListener('click', () => {
+      camera.position.set(400, 320, 420);
+      controls.target.set(0, 130, 0);
+      controls.update();
+    });
+
+    document.getElementById('toggleTrailBtn').addEventListener('click', () => {
+      trailEnabled = !trailEnabled;
+      if (trailLine) trailLine.visible = trailEnabled;
+    });
+
+    // Preset chips
+    document.querySelectorAll('.preset-chip').forEach(chip => {
+      chip.addEventListener('click', async () => {
+        const code = chip.getAttribute('data-code');
+        const autoExec = document.getElementById('laptopAutoExecute').checked;
+        await fetch('/api/scan_qr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            qr_data: code,
+            auto_execute: autoExec,
+            source: 'laptop_dashboard'
+          })
+        });
+      });
+    });
+
+    document.getElementById('clearLogBtn').addEventListener('click', async () => {
+      await fetch('/api/dispatch/clear', { method: 'POST' });
+      document.getElementById('dispatchTableBody').innerHTML = `
+        <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 16px;">Log cleared.</td></tr>
+      `;
+    });
+
+    // --- Modals Logic ---
+    const phoneModal = document.getElementById('phoneModal');
+    const targetsModal = document.getElementById('targetsModal');
+    let phoneQrGenerated = false;
+    let targetsQrGenerated = false;
+
+    document.getElementById('openPairPhoneBtn').addEventListener('click', async () => {
+      phoneModal.classList.add('open');
+      if (!phoneQrGenerated) {
+        try {
+          const res = await fetch('/api/network_info');
+          const data = await res.json();
+          const scannerUrl = data.scanner_url || `http://${window.location.hostname}:8000/scanner`;
+          document.getElementById('phoneUrlText').textContent = scannerUrl;
+
+          document.getElementById('scannerQrTarget').innerHTML = '';
+          new QRCode(document.getElementById('scannerQrTarget'), {
+            text: scannerUrl,
+            width: 220,
+            height: 220,
+            colorDark: "#070a12",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.M
+          });
+          phoneQrGenerated = true;
+        } catch (e) {
+          console.error('Failed to get network info', e);
+        }
+      }
+    });
+
+    document.getElementById('closePhoneModalBtn').addEventListener('click', () => {
+      phoneModal.classList.remove('open');
+    });
+
+    document.getElementById('copyPhoneUrlBtn').addEventListener('click', () => {
+      const url = document.getElementById('phoneUrlText').textContent.trim();
+      navigator.clipboard.writeText(url);
+      alert('Scanner URL copied to clipboard: ' + url);
+    });
+
+    document.getElementById('openTargetsBtn').addEventListener('click', () => {
+      targetsModal.classList.add('open');
+      if (!targetsQrGenerated && typeof QRCode !== 'undefined') {
+        const makeQr = (elId, text) => {
+          document.getElementById(elId).innerHTML = '';
+          new QRCode(document.getElementById(elId), {
+            text: text, width: 140, height: 140,
+            colorDark: "#000000", colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.M
+          });
+        };
+        makeQr('qrTarget1', 'INV-BOX-01');
+        makeQr('qrTarget2', 'INV-BOX-02');
+        makeQr('qrTarget3', 'INV-BOX-03');
+        makeQr('qrTarget4', 'RETURN-BIN-01');
+        targetsQrGenerated = true;
+      }
+    });
+
+    document.getElementById('closeTargetsModalBtn').addEventListener('click', () => {
+      targetsModal.classList.remove('open');
+    });
+
+    // Close modal on background click
+    [phoneModal, targetsModal].forEach(m => {
+      m.addEventListener('click', (e) => {
+        if (e.target === m) m.classList.remove('open');
+      });
+    });
+
+    // Init
+    window.addEventListener('DOMContentLoaded', () => {
+      initThreeJs();
+      initWebSocket();
+    });
+  </script>
+</body>
+</html>

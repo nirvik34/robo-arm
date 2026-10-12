@@ -64,7 +64,7 @@ class SerialManager:
         self._thread: Optional[threading.Thread] = None
         self._sim_thread: Optional[threading.Thread] = None
         self._watchdog_thread: Optional[threading.Thread] = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.listeners: List[Callable[[Dict[str, Any]], None]] = []
         self.log_listeners: List[Callable[[str, str], None]] = []
 
@@ -416,40 +416,63 @@ class SerialManager:
         elif c == "DIST":
             self.status["dist"] = 14.5
         elif c in ["PICKDROP", "RUN"]:
-            # Launch simulated routine
-            threading.Thread(target=self._simulate_routine, args=(False,), daemon=True).start()
+            p_base = 45.0
+            d_base = 135.0
+            if len(parts) >= 3:
+                try:
+                    p_base = float(parts[1])
+                    d_base = float(parts[2])
+                except ValueError:
+                    pass
+            threading.Thread(target=self._simulate_routine, args=(False, p_base, d_base), daemon=True).start()
         elif c == "REVERSE":
-            threading.Thread(target=self._simulate_routine, args=(True,), daemon=True).start()
+            p_base = 45.0
+            d_base = 135.0
+            if len(parts) >= 3:
+                try:
+                    p_base = float(parts[1])
+                    d_base = float(parts[2])
+                except ValueError:
+                    pass
+            threading.Thread(target=self._simulate_routine, args=(True, p_base, d_base), daemon=True).start()
 
         self._update_physics_state()
         self._notify_listeners(self.status)
 
-    def _simulate_routine(self, reverse: bool):
+    def _simulate_routine(self, reverse: bool, pick_b: float = 45.0, drop_b: float = 135.0):
         """Simulates full pick & drop routine in virtual physics mode."""
         self.status["routine"] = 1
-        pick_b = 135.0 if reverse else 45.0
-        drop_b = 45.0 if reverse else 135.0
+        src_b = drop_b if reverse else pick_b
+        dst_b = pick_b if reverse else drop_b
 
         steps = [
-            ("STEP 1: Sonar payload detection", [self.status["cur"][0], 90.0, 90.0, 90.0, 90.0, 20.0], 0.8),
-            ("STEP 2: Align Base & Open Claw", [pick_b, 90.0, 90.0, 90.0, 90.0, 20.0], 1.2),
-            ("STEP 3: Reach down onto payload", [pick_b, 60.0, 50.0, 105.0, 90.0, 20.0], 1.4),
-            ("STEP 4: Clamping gripper", [pick_b, 60.0, 50.0, 105.0, 90.0, 80.0], 0.8),
-            ("STEP 5: Vertical lift with gravity compensation", [pick_b, 95.0, 100.0, 85.0, 90.0, 80.0], 1.4),
-            ("STEP 6: Transferring to drop station", [drop_b, 95.0, 100.0, 85.0, 90.0, 80.0], 1.6),
-            ("STEP 7: Lowering into drop bin", [drop_b, 65.0, 55.0, 100.0, 90.0, 80.0], 1.3),
-            ("STEP 8: Releasing payload", [drop_b, 65.0, 55.0, 100.0, 90.0, 20.0], 0.8),
-            ("STEP 9: Safe Home Return", [90.0, 90.0, 90.0, 90.0, 90.0, 20.0], 1.2),
+            ("STEP 1: Sonar payload detection", [self.status["cur"][0], 90.0, 90.0, 90.0, 90.0, 20.0], 0.7),
+            ("STEP 2: Align Base & Open Claw", [src_b, 90.0, 90.0, 90.0, 90.0, 20.0], 1.0),
+            ("STEP 3: Reach down onto payload", [src_b, 60.0, 50.0, 105.0, 90.0, 20.0], 1.2),
+            ("STEP 4: Clamping gripper", [src_b, 60.0, 50.0, 105.0, 90.0, 80.0], 0.7),
+            ("STEP 5: Vertical lift with gravity compensation", [src_b, 95.0, 100.0, 85.0, 90.0, 80.0], 1.2),
+            ("STEP 6: Transferring to drop station", [dst_b, 95.0, 100.0, 85.0, 90.0, 80.0], 1.4),
+            ("STEP 7: Lowering into drop bin", [dst_b, 65.0, 55.0, 100.0, 90.0, 80.0], 1.1),
+            ("STEP 8: Releasing payload", [dst_b, 65.0, 55.0, 100.0, 90.0, 20.0], 0.7),
+            ("STEP 9: Safe Home Return", [90.0, 90.0, 90.0, 90.0, 90.0, 20.0], 1.1),
         ]
 
-        for desc, tgt, duration in steps:
-            if not self.status["routine"]:
+        total = len(steps)
+        for idx, (desc, tgt, duration) in enumerate(steps, 1):
+            if not self.status.get("routine", 0):
                 break
-            self._notify_log("ROUTINE", desc)
+            self.status["routine"] = idx
+            self.status["routine_step"] = idx
+            self.status["routine_desc"] = desc
+            self.status["routine_total_steps"] = total
+            self._notify_log("ROUTINE", f"[{idx}/{total}] {desc}")
             self.status["tgt"] = list(tgt)
             self._notify_listeners(self.status)
             time.sleep(duration)
 
         self.status["routine"] = 0
+        self.status["routine_step"] = 0
+        self.status["routine_desc"] = "Standby / Ready"
         self._notify_log("ROUTINE", "✅ Autonomous Routine Complete!")
         self._notify_listeners(self.status)
+

@@ -700,11 +700,29 @@ void processCommand(char* cmd) {
   }
 
   // --- Autonomous Routine ---
-  else if (strcmp(cmd, "PICKDROP") == 0 || strcmp(cmd, "RUN") == 0) {
-    startPickDropRoutine(false, 45.0f, 135.0f);
+  else if (strncmp(cmd, "PICKDROP", 8) == 0 || strcmp(cmd, "RUN") == 0) {
+    float pickB = 45.0f;
+    float dropB = 135.0f;
+    if (strlen(cmd) > 8) {
+      float p1, p2;
+      if (sscanf(cmd + 8, "%f %f", &p1, &p2) == 2) {
+        pickB = constrain(p1, joints[0].minLimitDeg, joints[0].maxLimitDeg);
+        dropB = constrain(p2, joints[0].minLimitDeg, joints[0].maxLimitDeg);
+      }
+    }
+    startPickDropRoutine(false, pickB, dropB);
   }
-  else if (strcmp(cmd, "REVERSE") == 0) {
-    startPickDropRoutine(true, 45.0f, 135.0f);
+  else if (strncmp(cmd, "REVERSE", 7) == 0) {
+    float pickB = 45.0f;
+    float dropB = 135.0f;
+    if (strlen(cmd) > 7) {
+      float p1, p2;
+      if (sscanf(cmd + 7, "%f %f", &p1, &p2) == 2) {
+        pickB = constrain(p1, joints[0].minLimitDeg, joints[0].maxLimitDeg);
+        dropB = constrain(p2, joints[0].minLimitDeg, joints[0].maxLimitDeg);
+      }
+    }
+    startPickDropRoutine(true, pickB, dropB);
   }
 
   // --- Manual Positioning ---

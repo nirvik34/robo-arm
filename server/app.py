@@ -131,6 +131,15 @@ class PhysicsConfigCommand(BaseModel):
 
 class QrScanRequest(BaseModel):
     qr_data: str
+    auto_execute: Optional[bool] = True
+    source: Optional[str] = "mobile_scanner"
+
+class DispatchExecuteRequest(BaseModel):
+    item_id: Optional[str] = None
+    pick_base: Optional[float] = 45.0
+    drop_base: Optional[float] = 135.0
+    reverse: Optional[bool] = False
+    name: Optional[str] = "Direct Dispatch"
 
 class IkSolveRequest(BaseModel):
     x: float
@@ -187,6 +196,16 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 @app.api_route("/", methods=["GET", "HEAD"])
 async def get_index():
     return FileResponse(FRONTEND_DIR / "index.html")
+
+@app.api_route("/pick-drop", methods=["GET", "HEAD"])
+@app.api_route("/pick_drop.html", methods=["GET", "HEAD"])
+async def get_pick_drop_page():
+    return FileResponse(FRONTEND_DIR / "pick_drop.html")
+
+@app.api_route("/scanner", methods=["GET", "HEAD"])
+@app.api_route("/scanner.html", methods=["GET", "HEAD"])
+async def get_scanner_page():
+    return FileResponse(FRONTEND_DIR / "scanner.html")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -522,43 +541,245 @@ def shutil_which(cmd: str) -> Optional[str]:
     import shutil
     return shutil.which(cmd)
 
-# Inventory Management API
+# Dispatch & Inventory Management System
+DISPATCH_HISTORY: List[Dict[str, Any]] = []
+
+def get_primary_lan_ip() -> str:
+    """Detects the primary Wi-Fi / LAN IP address of this machine."""
+    ips = []
+    try:
+        output = subprocess.check_output(['hostname', '-I'], text=True).strip().split()
+        for ip in output:
+            if ':' not in ip and not ip.startswith('127.'):
+                ips.append(ip)
+    except Exception:
+        pass
+
+    primary = "127.0.0.1"
+    for ip in ips:
+        # Filter out Docker bridge networks (172.17.x, 172.18.x)
+        if not ip.startswith("172.17.") and not ip.startswith("172.18."):
+            primary = ip
+            break
+    if primary == "127.0.0.1" and ips:
+        primary = ips[0]
+    return primary
+
+def parse_qr_payload(code: str) -> Dict[str, Any]:
+    """
+    Intelligently parses QR code text:
+    1. Known Inventory Database IDs (INV-BOX-01, etc.)
+    2. JSON structured payloads (e.g. {"name": "Part A", "pick_base": 50, "drop_base": 140})
+    3. Coordinate string (e.g. "PICK:45,DROP:135" or "45,135")
+    4. Custom arbitrary text
+    """
+    code = code.strip()
+    if code in INVENTORY_DATABASE:
+        return INVENTORY_DATABASE[code]
+
+    # Try JSON format
+    try:
+        obj = json.loads(code)
+        if isinstance(obj, dict):
+            p_base = float(obj.get("pick_base", obj.get("pick", 45.0)))
+            d_base = float(obj.get("drop_base", obj.get("drop", 135.0)))
+            name = str(obj.get("name", f"Puck {obj.get('id', 'Custom')}"))
+            item = {
+                "id": str(obj.get("id", f"QR-{int(time.time())}")),
+                "name": name,
+                "sku": str(obj.get("sku", f"SKU-CUSTOM")),
+                "category": str(obj.get("category", "Custom QR")),
+                "pick_base": p_base,
+                "drop_base": d_base,
+                "is_reverse": bool(obj.get("reverse", False)),
+                "location": str(obj.get("location", f"Pick Station ({p_base:.1f}°)")),
+                "target_bin": str(obj.get("target_bin", f"Drop Bin ({d_base:.1f}°)")),
+                "status": "Ready for Pickup",
+                "scans_count": 0,
+                "last_scanned": None
+            }
+            INVENTORY_DATABASE[item["id"]] = item
+            return item
+    except Exception:
+        pass
+
+    # Try delimited format like "PICK:45,DROP:135" or "45,135"
+    if "," in code or ";" in code:
+        parts = code.replace(";", ",").split(",")
+        p_base = None
+        d_base = None
+        for p in parts:
+            p = p.strip()
+            if ":" in p or "=" in p:
+                k, v = p.replace("=", ":").split(":", 1)
+                k = k.strip().upper()
+                try:
+                    if "PICK" in k: p_base = float(v.strip())
+                    elif "DROP" in k: d_base = float(v.strip())
+                except ValueError:
+                    pass
+            else:
+                try:
+                    val = float(p)
+                    if p_base is None: p_base = val
+                    elif d_base is None: d_base = val
+                except ValueError:
+                    pass
+        if p_base is not None and d_base is not None:
+            item = {
+                "id": f"QR-{int(p_base)}-{int(d_base)}",
+                "name": f"Coordinate Target ({p_base:.0f}° ➔ {d_base:.0f}°)",
+                "sku": f"SKU-{int(p_base)}{int(d_base)}",
+                "category": "Direct Angles",
+                "pick_base": p_base,
+                "drop_base": d_base,
+                "is_reverse": False,
+                "location": f"Pick Station ({p_base:.1f}°)",
+                "target_bin": f"Drop Bin ({d_base:.1f}°)",
+                "status": "Ready for Pickup",
+                "scans_count": 0,
+                "last_scanned": None
+            }
+            INVENTORY_DATABASE[item["id"]] = item
+            return item
+
+    # Generic string fallback
+    item = {
+        "id": code,
+        "name": f"Scanned Item ({code})",
+        "sku": f"SKU-{code[:6]}",
+        "category": "Custom Scanned",
+        "pick_base": 45.0,
+        "drop_base": 135.0,
+        "is_reverse": False,
+        "location": "Station A (45°)",
+        "target_bin": "Drop Bin 1 (135°)",
+        "status": "Ready for Pickup",
+        "scans_count": 0,
+        "last_scanned": None
+    }
+    INVENTORY_DATABASE[code] = item
+    return item
+
 @app.get("/api/inventory")
 async def get_inventory():
     return {"items": list(INVENTORY_DATABASE.values())}
 
+@app.get("/api/network_info")
+async def get_network_info_endpoint():
+    lan_ip = get_primary_lan_ip()
+    return {
+        "primary_ip": lan_ip,
+        "port": 8000,
+        "scanner_url": f"http://{lan_ip}:8000/scanner",
+        "pick_drop_url": f"http://{lan_ip}:8000/pick-drop",
+        "all_ips": subprocess.check_output(['hostname', '-I'], text=True).strip().split() if shutil_which('hostname') else [lan_ip]
+    }
+
+@app.get("/api/dispatch/history")
+async def get_dispatch_history():
+    return {"history": DISPATCH_HISTORY}
+
+@app.post("/api/dispatch/clear")
+async def clear_dispatch_history():
+    DISPATCH_HISTORY.clear()
+    return {"success": True}
+
+@app.post("/api/dispatch/execute")
+async def execute_dispatch(req: DispatchExecuteRequest):
+    item = None
+    if req.item_id and req.item_id in INVENTORY_DATABASE:
+        item = INVENTORY_DATABASE[req.item_id]
+
+    pick_b = float(req.pick_base if req.pick_base is not None else (item["pick_base"] if item else 45.0))
+    drop_b = float(req.drop_base if req.drop_base is not None else (item["drop_base"] if item else 135.0))
+    is_rev = bool(req.reverse if req.reverse is not None else (item.get("is_reverse", False) if item else False))
+
+    cmd_str = f"REVERSE {pick_b:.1f} {drop_b:.1f}" if is_rev else f"PICKDROP {pick_b:.1f} {drop_b:.1f}"
+    serial_mgr.send_raw(cmd_str)
+
+    history_record = {
+        "id": f"DSP-{int(time.time()*1000)}",
+        "item_id": req.item_id or "MANUAL",
+        "item_name": (item["name"] if item else req.name) or "Manual Dispatch",
+        "sku": (item.get("sku", "MANUAL") if item else "MANUAL"),
+        "pick_base": pick_b,
+        "drop_base": drop_b,
+        "source": "laptop_dashboard",
+        "timestamp": time.strftime("%H:%M:%S"),
+        "status": "In Progress",
+        "auto_executed": True
+    }
+    DISPATCH_HISTORY.insert(0, history_record)
+    if len(DISPATCH_HISTORY) > 50:
+        DISPATCH_HISTORY.pop()
+
+    await broadcast_ws({
+        "type": "qr_dispatch",
+        "item": item or {
+            "id": req.item_id or "MANUAL",
+            "name": req.name or "Manual Dispatch",
+            "pick_base": pick_b,
+            "drop_base": drop_b,
+            "is_reverse": is_rev
+        },
+        "history": history_record,
+        "auto_executed": True,
+        "source": "laptop_dashboard",
+        "timestamp": time.time()
+    })
+
+    return {"success": True, "command": cmd_str, "record": history_record}
+
 @app.post("/api/scan_qr")
 async def process_qr_scan(req: QrScanRequest):
-    code = req.qr_data.strip()
-    item = INVENTORY_DATABASE.get(code)
-    if not item:
-        item = {
-            "id": code,
-            "name": f"Scanned Item ({code})",
-            "sku": f"SKU-{code[:6]}",
-            "category": "Custom Scanned",
-            "pick_base": 45.0,
-            "drop_base": 135.0,
-            "is_reverse": False,
-            "location": "Custom Station",
-            "target_bin": "Bin 1",
-            "status": "Scanned Custom",
-            "scans_count": 0,
-            "last_scanned": None
-        }
-        INVENTORY_DATABASE[code] = item
-
-    item["scans_count"] += 1
+    item = parse_qr_payload(req.qr_data)
+    item["scans_count"] = item.get("scans_count", 0) + 1
     item["last_scanned"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    item["status"] = "Processing Pick & Drop"
 
-    # Trigger pick & drop routine
+    is_auto = bool(req.auto_execute)
     is_rev = item.get("is_reverse", False)
-    serial_mgr.send_raw("REVERSE" if is_rev else "PICKDROP")
+    pick_b = float(item.get("pick_base", 45.0))
+    drop_b = float(item.get("drop_base", 135.0))
+
+    if is_auto:
+        cmd_str = f"REVERSE {pick_b:.1f} {drop_b:.1f}" if is_rev else f"PICKDROP {pick_b:.1f} {drop_b:.1f}"
+        serial_mgr.send_raw(cmd_str)
+        item["status"] = "Processing Pick & Drop"
+    else:
+        item["status"] = "Queued on Dashboard"
+
+    history_record = {
+        "id": f"DSP-{int(time.time()*1000)}",
+        "item_id": item["id"],
+        "item_name": item["name"],
+        "sku": item.get("sku", ""),
+        "pick_base": pick_b,
+        "drop_base": drop_b,
+        "source": req.source or "mobile_scanner",
+        "timestamp": time.strftime("%H:%M:%S"),
+        "status": "In Progress" if is_auto else "Queued",
+        "auto_executed": is_auto
+    }
+    DISPATCH_HISTORY.insert(0, history_record)
+    if len(DISPATCH_HISTORY) > 50:
+        DISPATCH_HISTORY.pop()
+
+    # Real-time WebSocket broadcast to laptop dashboard
+    await broadcast_ws({
+        "type": "qr_dispatch",
+        "item": item,
+        "history": history_record,
+        "auto_executed": is_auto,
+        "source": req.source or "mobile_scanner",
+        "timestamp": time.time()
+    })
 
     return {
         "success": True,
         "item": item,
-        "routine_triggered": True,
+        "routine_triggered": is_auto,
+        "history": history_record,
         "is_reverse": is_rev
     }
+
